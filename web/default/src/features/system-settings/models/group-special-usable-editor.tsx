@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -351,6 +351,11 @@ export function GroupSpecialUsableRulesEditor(
   const [newGroupName, setNewGroupName] = useState('')
 
   const { onChange } = props
+
+  useEffect(() => {
+    setRules(flattenRules(safeParseJson(props.value)))
+  }, [props.value])
+
   const emitChange = useCallback(
     (newRules: Rule[]) => {
       setRules(newRules)
