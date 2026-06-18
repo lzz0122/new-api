@@ -9,7 +9,9 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -29,6 +31,27 @@ func buildMaskedTokenResponses(tokens []*model.Token) []*model.Token {
 		maskedTokens = append(maskedTokens, buildMaskedTokenResponse(token))
 	}
 	return maskedTokens
+}
+
+func validateTokenGroupForUser(c *gin.Context, tokenGroup string) bool {
+	tokenGroup = strings.TrimSpace(tokenGroup)
+	if tokenGroup == "" {
+		return true
+	}
+	userGroup, err := model.GetUserGroup(c.GetInt("id"), false)
+	if err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	if _, ok := service.GetUserUsableGroups(userGroup)[tokenGroup]; !ok {
+		common.ApiError(c, fmt.Errorf("无权使用 %s 分组", tokenGroup))
+		return false
+	}
+	if tokenGroup != "auto" && !ratio_setting.ContainsGroupRatio(tokenGroup) {
+		common.ApiError(c, fmt.Errorf("分组 %s 已被弃用", tokenGroup))
+		return false
+	}
+	return true
 }
 
 func GetAllTokens(c *gin.Context) {
@@ -201,6 +224,10 @@ func AddToken(c *gin.Context) {
 		})
 		return
 	}
+	token.Group = strings.TrimSpace(token.Group)
+	if !validateTokenGroupForUser(c, token.Group) {
+		return
+	}
 	key, err := common.GenerateKey()
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgTokenGenerateFailed)
@@ -289,6 +316,10 @@ func UpdateToken(c *gin.Context) {
 	if statusOnly != "" {
 		cleanToken.Status = token.Status
 	} else {
+		token.Group = strings.TrimSpace(token.Group)
+		if !validateTokenGroupForUser(c, token.Group) {
+			return
+		}
 		// If you add more fields, please also update token.Update()
 		cleanToken.Name = token.Name
 		cleanToken.ExpiredTime = token.ExpiredTime
