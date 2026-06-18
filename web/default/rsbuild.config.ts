@@ -11,13 +11,18 @@ export default defineConfig(({ envMode }) => {
   const serverUrl =
     process.env.VITE_REACT_APP_SERVER_URL ||
     env.rawPublicVars.VITE_REACT_APP_SERVER_URL ||
+    ''
+  const proxyServerUrl =
+    process.env.VITE_REACT_APP_PROXY_URL ||
+    env.rawPublicVars.VITE_REACT_APP_PROXY_URL ||
+    serverUrl ||
     'http://localhost:3000'
 
   const isProd = envMode === 'production'
   const devProxy = Object.fromEntries(
     (['/api', '/mj', '/pg'] as const).map((key) => [
       key,
-      { target: serverUrl, changeOrigin: true },
+      { target: proxyServerUrl, changeOrigin: true },
     ]),
   ) as Record<string, { target: string; changeOrigin: boolean }>
 
@@ -53,6 +58,9 @@ export default defineConfig(({ envMode }) => {
     source: {
       entry: {
         index: './src/main.tsx',
+      },
+      define: {
+        'import.meta.env.VITE_REACT_APP_SERVER_URL': JSON.stringify(serverUrl),
       },
     },
     resolve: {
