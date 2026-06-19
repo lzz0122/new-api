@@ -13,6 +13,7 @@ import (
 )
 
 const DefaultCarpoolFinish2FAOption = "carpool.finish_2fa_code"
+const defaultCarpoolSessionStartedAt = "2026-06-19 00:00:00"
 
 type CarpoolUsageDailySummary struct {
 	Date  string `json:"date"`
@@ -52,8 +53,8 @@ type CarpoolStatusSnapshot struct {
 }
 
 type CarpoolHistoryGroup struct {
-	Group    string                   `json:"group"`
-	Total   CarpoolUsageTotals       `json:"total"`
+	Group    string                  `json:"group"`
+	Total    CarpoolUsageTotals      `json:"total"`
 	Sessions []CarpoolSessionSummary `json:"sessions"`
 }
 
@@ -245,13 +246,13 @@ func EnsureDefaultCarpoolSession() error {
 	}
 	group := DefaultCarnivalGroup
 	var count int64
-	if err := LOG_DB.Model(&CarpoolSession{}).Where("group_name = ?", group).Count(&count).Error; err != nil {
+	if err := LOG_DB.Model(&CarpoolSession{}).Where("group_name = ? AND ended_at = 0", group).Count(&count).Error; err != nil {
 		return err
 	}
 	if count > 0 {
 		return nil
 	}
-	start, err := time.ParseInLocation("2006-01-02 15:04:05", "2026-06-15 12:00:00", time.Local)
+	start, err := time.ParseInLocation("2006-01-02 15:04:05", defaultCarpoolSessionStartedAt, time.Local)
 	if err != nil {
 		return err
 	}

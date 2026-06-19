@@ -121,3 +121,30 @@ func TestCarpoolUsageDailySnapshotUpsertQualifiesConflictColumns(t *testing.T) {
 	require.NotContains(t, strings.ToLower(expressions["username"]), "else username end")
 	require.NotContains(t, strings.ToLower(expressions["token_name"]), "else token_name end")
 }
+
+func TestEnsureDefaultCarpoolSessionCreatesActiveWhenOnlyHistoryExists(t *testing.T) {
+	truncateTables(t)
+
+	require.NoError(t, LOG_DB.Create(&CarpoolSession{
+		GroupName: DefaultCarnivalGroup,
+		StartedAt: 1,
+		EndedAt:   2,
+		CreatedAt: 1,
+		UpdatedAt: 2,
+	}).Error)
+
+	require.NoError(t, EnsureDefaultCarpoolSession())
+	require.NoError(t, EnsureDefaultCarpoolSession())
+
+	var activeSessions []CarpoolSession
+	require.NoError(t, LOG_DB.Where("group_name = ? AND ended_at = 0", DefaultCarnivalGroup).Find(&activeSessions).Error)
+	require.Len(t, activeSessions, 1)
+
+	expectedStart, err := time.ParseInLocation("2006-01-02 15:04:05", defaultCarpoolSessionStartedAt, time.Local)
+	require.NoError(t, err)
+	require.EqualValues(t, expectedStart.Unix(), activeSessions[0].StartedAt)
+
+	var total int64
+	require.NoError(t, LOG_DB.Model(&CarpoolSession{}).Where("group_name = ?", DefaultCarnivalGroup).Count(&total).Error)
+	require.EqualValues(t, 2, total)
+}
