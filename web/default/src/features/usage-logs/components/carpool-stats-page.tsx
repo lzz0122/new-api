@@ -48,10 +48,25 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from '@/components/ui/empty'
+import { Input } from '@/components/ui/input'
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -66,17 +81,25 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { Dialog } from '@/components/dialog'
 import {
+  finishCarpool,
   finishCarnival,
+  getCarpoolGroups,
+  getCarpoolHistory,
+  getCarpoolStatus,
   getCarpoolUsageSummary,
   getCarnivalHistory,
   getCarnivalStatus,
   getUpstreamUsage,
+  startCarpool,
   startCarnival,
 } from '../api'
 import type {
   CarnivalSessionSummary,
   CarnivalUserUsageSummary,
+  CarpoolHistorySnapshot,
+  CarpoolSessionSummary,
   CarpoolUsageDailySummary,
   CarpoolUsageSummarySnapshot,
   CarpoolUsageTokenSummary,
@@ -85,9 +108,8 @@ import type {
 } from '../types'
 import { useUsageLogsContext } from './usage-logs-provider'
 
-const CARPOOL_GROUP = '拼车'
+const DEFAULT_CARPOOL_GROUP = '拼车'
 const ALL_MONTHS_VALUE = 'all'
-type CarpoolPeriod = 'week' | 'month'
 
 function twoDigit(value: number) {
   return String(value).padStart(2, '0')
@@ -157,6 +179,32 @@ function formatUpstreamCost(value?: number) {
 
 function formatCount(value?: number) {
   return formatNumber(value || 0)
+}
+
+function formatSessionRange(session?: CarpoolSessionSummary | null) {
+  if (!session) return '-'
+  return `${formatDateTime(session.started_at)} - ${
+    session.ended_at ? formatDateTime(session.ended_at) : '进行中'
+  }`
+}
+
+function formatConcurrency(concurrency?: { used?: number; limit?: number }) {
+  if (!concurrency) return '-'
+  const used = formatCount(concurrency.used)
+  return concurrency.limit && concurrency.limit > 0
+    ? `${used} / ${formatCount(concurrency.limit)}`
+    : used
+}
+
+function InactiveCarpoolNotice({ group }: { group: string }) {
+  return (
+    <Empty className='min-h-48'>
+      <EmptyHeader>
+        <EmptyTitle>该分组暂未开启拼车</EmptyTitle>
+        <EmptyDescription>{group || '-'} 当前没有进行中的拼车</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  )
 }
 
 function MetricTile({
@@ -449,51 +497,42 @@ function CarpoolUserUsageTable({
   )
 }
 
-function CarpoolUsageSummaryCard({ masked }: { masked: boolean }) {
+function CarpoolUsageSummaryCard({
+  group,
+  currentOpen,
+  sessionId,
+  masked,
+}: {
+  group: string
+  currentOpen: boolean
+  sessionId?: number | null
+  masked: boolean
+}) {
   const { t } = useTranslation()
-  const [period, setPeriod] = useState<CarpoolPeriod>('week')
 
   const query = useQuery({
-    queryKey: ['carpool-usage-summary', CARPOOL_GROUP, period],
+    queryKey: ['carpool-usage-summary', group, 'session', sessionId || 0],
     queryFn: () =>
       getCarpoolUsageSummary({
-        group: CARPOOL_GROUP,
-        period,
+        group,
+        scope: 'session',
+        session_id: sessionId || undefined,
       }),
+    enabled: !!group && currentOpen,
     placeholderData: (previousData) => previousData,
     refetchInterval: 30_000,
   })
 
   const data = query.data
   const totals = data?.totals
-  const rangeText = data
-    ? `${data.start_date} ${t('to')} ${data.end_date}`
-    : CARPOOL_GROUP
+  const rangeText = data?.session ? formatSessionRange(data.session) : group
 
   return (
     <Card className='min-h-0 shrink-0'>
       <CardHeader>
         <CardTitle>{t('Carpool quota statistics')}</CardTitle>
         <CardDescription>{rangeText}</CardDescription>
-        <CardAction className='flex flex-wrap items-center gap-2'>
-          <div className='border-border bg-muted/20 flex rounded-md border p-0.5'>
-            <Button
-              variant={period === 'week' ? 'secondary' : 'ghost'}
-              size='sm'
-              className='h-7'
-              onClick={() => setPeriod('week')}
-            >
-              {t('This Week')}
-            </Button>
-            <Button
-              variant={period === 'month' ? 'secondary' : 'ghost'}
-              size='sm'
-              className='h-7'
-              onClick={() => setPeriod('month')}
-            >
-              {t('This Month')}
-            </Button>
-          </div>
+        <CardAction>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -513,7 +552,9 @@ function CarpoolUsageSummaryCard({ masked }: { masked: boolean }) {
         </CardAction>
       </CardHeader>
       <CardContent className='space-y-4'>
-        {query.isLoading && !data ? (
+        {!currentOpen ? (
+          <InactiveCarpoolNotice group={group} />
+        ) : query.isLoading && !data ? (
           <div className='space-y-3'>
             <Skeleton className='h-24 w-full rounded-lg' />
             <Skeleton className='h-80 w-full rounded-lg' />
@@ -770,11 +811,15 @@ function CarnivalHistoryPicker({
 }
 
 function CarnivalUsageCard({
+  group,
+  currentOpen,
   active,
   activeElapsed,
   masked,
   onRefresh,
 }: {
+  group: string
+  currentOpen: boolean
   active?: CarnivalSessionSummary | null
   activeElapsed: number
   masked: boolean
@@ -792,30 +837,28 @@ function CarnivalUsageCard({
   >(null)
 
   const carpoolUsersQuery = useQuery({
-    queryKey: [
-      'carpool-usage-summary',
-      CARPOOL_GROUP,
-      'current-carnival-users',
-    ],
+    queryKey: ['carpool-usage-summary', group, 'current-carnival-users'],
     queryFn: () =>
       getCarpoolUsageSummary({
-        group: CARPOOL_GROUP,
-        period: 'week',
+        group,
+        scope: 'session',
       }),
+    enabled: !!group && currentOpen,
     placeholderData: (previousData) => previousData,
     refetchInterval: 30_000,
   })
 
   const historyQuery = useQuery({
-    queryKey: ['carnival-history', CARPOOL_GROUP, ALL_MONTHS_VALUE],
+    queryKey: ['carnival-history', group, ALL_MONTHS_VALUE],
     queryFn: async () => {
       const result = await getCarnivalHistory({
-        group: CARPOOL_GROUP,
+        group,
         month: ALL_MONTHS_VALUE,
       })
       if (!result.success) return null
       return result.data || null
     },
+    enabled: !!group && currentOpen,
     placeholderData: (previousData) => previousData,
   })
 
@@ -900,20 +943,20 @@ function CarnivalUsageCard({
 
   const invalidateCarnival = () => {
     queryClient.invalidateQueries({
-      queryKey: ['carnival-status', CARPOOL_GROUP],
+      queryKey: ['carnival-status', group],
     })
     queryClient.invalidateQueries({
-      queryKey: ['carnival-history', CARPOOL_GROUP],
+      queryKey: ['carnival-history', group],
     })
     queryClient.invalidateQueries({
-      queryKey: ['carpool-usage-summary', CARPOOL_GROUP],
+      queryKey: ['carpool-usage-summary', group],
     })
     queryClient.invalidateQueries({ queryKey: ['usage-logs-stats'] })
   }
 
   const startMutation = useMutation({
     mutationFn: async () => {
-      const result = await startCarnival({ group: CARPOOL_GROUP })
+      const result = await startCarnival({ group })
       if (!result.success) {
         throw new Error(result.message || t('Operation failed'))
       }
@@ -929,7 +972,7 @@ function CarnivalUsageCard({
 
   const finishMutation = useMutation({
     mutationFn: async () => {
-      const result = await finishCarnival({ group: CARPOOL_GROUP })
+      const result = await finishCarnival({ group })
       if (!result.success) {
         throw new Error(result.message || t('Operation failed'))
       }
@@ -1039,104 +1082,110 @@ function CarnivalUsageCard({
         </CardAction>
       </CardHeader>
       <CardContent className='space-y-4'>
-        <div className='flex flex-wrap items-center gap-2'>
-          <Badge
-            variant='outline'
-            className={cn(
-              'gap-1.5',
-              !selectedHistorySession &&
-                active &&
-                'border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300'
-            )}
-          >
-            {selectedHistorySession ? (
-              <History className='size-3.5' />
-            ) : (
-              <Flame className='size-3.5' />
-            )}
-            {selectedHistorySession
-              ? t('Carnival Sessions')
-              : active
-                ? t('Carnival Active')
-                : t('Carnival Idle')}
-          </Badge>
-          <Badge variant='secondary' className='gap-1.5'>
-            <History className='size-3.5' />
-            {CARPOOL_GROUP}
-          </Badge>
-        </div>
-
-        <div className='grid gap-3 md:grid-cols-2 xl:grid-cols-4'>
-          <MetricTile
-            label={
-              selectedHistorySession
-                ? t('Carnival Usage')
-                : t('Current Carnival Total')
-            }
-            value={quotaValue(displayedCarnivalQuota, masked)}
-            icon={<Flame className='size-3.5 text-orange-500' />}
-            sub={
-              selectedHistorySession
-                ? `${t('Duration')}: ${formatDurationSeconds(displayedCarnivalDuration)}`
-                : active
-                  ? `${t('Live Duration')}: ${formatDurationSeconds(displayedCarnivalDuration)}`
-                  : t('No active carnival')
-            }
-          />
-          <MetricTile
-            label={t('Users')}
-            value={formatCount(displayedCarnivalUsers)}
-            icon={<History className='size-3.5 text-emerald-500' />}
-            sub={
-              selectedHistorySession
-                ? t('Carnival Sessions')
-                : active
-                  ? t('Current Carnival')
-                  : t('No active carnival')
-            }
-          />
-          <MetricTile
-            label={t('Tokens')}
-            value={formatCount(displayedCarnivalTokens)}
-            icon={<KeyRound className='size-3.5 text-blue-500' />}
-            sub={
-              selectedHistorySession || active
-                ? `${t('Started')}: ${formatDateTime(
-                    selectedHistorySession?.started_at ?? active?.started_at
-                  )}`
-                : '-'
-            }
-          />
-          <MetricTile
-            label={t('Requests')}
-            value={formatCount(displayedCarnivalRequests)}
-            icon={<CalendarClock className='size-3.5 text-violet-500' />}
-            sub={
-              selectedHistorySession
-                ? `${t('Ended')}: ${formatDateTime(
-                    selectedHistorySession.ended_at
-                  )}`
-                : active
-                  ? t('Current Carnival')
-                  : '-'
-            }
-          />
-        </div>
-
-        <div className='space-y-2'>
-          <div className='flex items-center justify-between gap-3'>
-            <div className='text-sm font-medium'>
-              {t('Per-user Carnival Usage')}
+        {!currentOpen ? (
+          <InactiveCarpoolNotice group={group} />
+        ) : (
+          <>
+            <div className='flex flex-wrap items-center gap-2'>
+              <Badge
+                variant='outline'
+                className={cn(
+                  'gap-1.5',
+                  !selectedHistorySession &&
+                    active &&
+                    'border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300'
+                )}
+              >
+                {selectedHistorySession ? (
+                  <History className='size-3.5' />
+                ) : (
+                  <Flame className='size-3.5' />
+                )}
+                {selectedHistorySession
+                  ? t('Carnival Sessions')
+                  : active
+                    ? t('Carnival Active')
+                    : t('Carnival Idle')}
+              </Badge>
+              <Badge variant='secondary' className='gap-1.5'>
+                <History className='size-3.5' />
+                {group}
+              </Badge>
             </div>
-            <div className='text-muted-foreground text-xs'>
-              {formatCount(displayedCarnivalUsers)} {t('Users')}
+
+            <div className='grid gap-3 md:grid-cols-2 xl:grid-cols-4'>
+              <MetricTile
+                label={
+                  selectedHistorySession
+                    ? t('Carnival Usage')
+                    : t('Current Carnival Total')
+                }
+                value={quotaValue(displayedCarnivalQuota, masked)}
+                icon={<Flame className='size-3.5 text-orange-500' />}
+                sub={
+                  selectedHistorySession
+                    ? `${t('Duration')}: ${formatDurationSeconds(displayedCarnivalDuration)}`
+                    : active
+                      ? `${t('Live Duration')}: ${formatDurationSeconds(displayedCarnivalDuration)}`
+                      : t('No active carnival')
+                }
+              />
+              <MetricTile
+                label={t('Users')}
+                value={formatCount(displayedCarnivalUsers)}
+                icon={<History className='size-3.5 text-emerald-500' />}
+                sub={
+                  selectedHistorySession
+                    ? t('Carnival Sessions')
+                    : active
+                      ? t('Current Carnival')
+                      : t('No active carnival')
+                }
+              />
+              <MetricTile
+                label={t('Tokens')}
+                value={formatCount(displayedCarnivalTokens)}
+                icon={<KeyRound className='size-3.5 text-blue-500' />}
+                sub={
+                  selectedHistorySession || active
+                    ? `${t('Started')}: ${formatDateTime(
+                        selectedHistorySession?.started_at ?? active?.started_at
+                      )}`
+                    : '-'
+                }
+              />
+              <MetricTile
+                label={t('Requests')}
+                value={formatCount(displayedCarnivalRequests)}
+                icon={<CalendarClock className='size-3.5 text-violet-500' />}
+                sub={
+                  selectedHistorySession
+                    ? `${t('Ended')}: ${formatDateTime(
+                        selectedHistorySession.ended_at
+                      )}`
+                    : active
+                      ? t('Current Carnival')
+                      : '-'
+                }
+              />
             </div>
-          </div>
-          <CurrentCarnivalUserTable
-            users={displayedCarnivalRows}
-            masked={masked}
-          />
-        </div>
+
+            <div className='space-y-2'>
+              <div className='flex items-center justify-between gap-3'>
+                <div className='text-sm font-medium'>
+                  {t('Per-user Carnival Usage')}
+                </div>
+                <div className='text-muted-foreground text-xs'>
+                  {formatCount(displayedCarnivalUsers)} {t('Users')}
+                </div>
+              </div>
+              <CurrentCarnivalUserTable
+                users={displayedCarnivalRows}
+                masked={masked}
+              />
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   )
@@ -1204,7 +1253,15 @@ function UpstreamLimitTable({
   )
 }
 
-function UpstreamQuotaCard({ masked }: { masked: boolean }) {
+function UpstreamQuotaCard({
+  group,
+  currentOpen,
+  masked,
+}: {
+  group: string
+  currentOpen: boolean
+  masked: boolean
+}) {
   const { t } = useTranslation()
   const [refreshSeq, setRefreshSeq] = useState(0)
   const [now, setNow] = useState(() => Date.now())
@@ -1215,15 +1272,16 @@ function UpstreamQuotaCard({ masked }: { masked: boolean }) {
   }, [])
 
   const { data, isFetching } = useQuery({
-    queryKey: ['sub2api-upstream-usage', CARPOOL_GROUP, refreshSeq],
+    queryKey: ['sub2api-upstream-usage', group, refreshSeq],
     queryFn: async () => {
       const result = await getUpstreamUsage({
-        group: CARPOOL_GROUP,
+        group,
         refresh: refreshSeq > 0,
       })
       if (!result.success) return null
       return result.data || null
     },
+    enabled: !!group && currentOpen,
     placeholderData: (previousData) => previousData,
     retry: false,
     staleTime: 30_000,
@@ -1241,7 +1299,7 @@ function UpstreamQuotaCard({ masked }: { masked: boolean }) {
     <Card className='min-h-0 shrink-0'>
       <CardHeader>
         <CardTitle>{t('Upstream Quota')}</CardTitle>
-        <CardDescription>{CARPOOL_GROUP}</CardDescription>
+        <CardDescription>{group}</CardDescription>
         <CardAction>
           <Tooltip>
             <TooltipTrigger
@@ -1266,7 +1324,9 @@ function UpstreamQuotaCard({ masked }: { masked: boolean }) {
         </CardAction>
       </CardHeader>
       <CardContent className='space-y-4'>
-        {isFetching && !data ? (
+        {!currentOpen ? (
+          <InactiveCarpoolNotice group={group} />
+        ) : isFetching && !data ? (
           <div className='space-y-3'>
             <Skeleton className='h-20 w-full rounded-lg' />
             <Skeleton className='h-28 w-full rounded-lg' />
@@ -1278,6 +1338,10 @@ function UpstreamQuotaCard({ masked }: { masked: boolean }) {
               <InfoRow
                 label={t('Key')}
                 value={masked ? '••••' : data?.masked_key || '-'}
+              />
+              <InfoRow
+                label='实时并发'
+                value={masked ? '••••' : formatConcurrency(data?.concurrency)}
               />
               <InfoRow
                 label={t('Updated')}
@@ -1302,26 +1366,229 @@ function UpstreamQuotaCard({ masked }: { masked: boolean }) {
   )
 }
 
+function CarpoolHistoryCard({
+  history,
+  selectedMonth,
+  selectedSessionId,
+  isFetching,
+  masked,
+  onMonthChange,
+  onSelectSession,
+}: {
+  history?: CarpoolHistorySnapshot | null
+  selectedMonth: string
+  selectedSessionId: number | null
+  isFetching: boolean
+  masked: boolean
+  onMonthChange: (month: string) => void
+  onSelectSession: (session: CarpoolSessionSummary) => void
+}) {
+  const { t } = useTranslation()
+  const months = history?.months || []
+  const groups = history?.groups || []
+
+  return (
+    <Card className='min-h-0 shrink-0'>
+      <CardHeader>
+        <CardTitle className='flex items-center gap-2'>
+          <History className='size-4' />
+          {t('Carpool History')}
+        </CardTitle>
+        <CardDescription>
+          {t('Carnival usage is excluded from carpool totals')}
+        </CardDescription>
+        <CardAction className='flex items-center gap-2'>
+          {isFetching ? (
+            <RefreshCw className='text-muted-foreground size-4 animate-spin' />
+          ) : null}
+          <Select
+            items={months.map((month) => ({ value: month, label: month }))}
+            value={selectedMonth}
+            onValueChange={onMonthChange}
+          >
+            <SelectTrigger size='sm' className='min-w-32'>
+              <SelectValue placeholder={t('Month')} />
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              <SelectGroup>
+                {months.map((month) => (
+                  <SelectItem key={month} value={month}>
+                    {month}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </CardAction>
+      </CardHeader>
+      <CardContent className='space-y-4'>
+        {groups.length === 0 ? (
+          <Empty className='min-h-40'>
+            <EmptyHeader>
+              <EmptyTitle>{t('No data')}</EmptyTitle>
+              <EmptyDescription>{t('No carpool history yet')}</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          groups.map((group) => (
+            <div key={group.group} className='space-y-2'>
+              <div className='flex flex-wrap items-center gap-2'>
+                <Badge variant='secondary'>{group.group}</Badge>
+                <Badge variant='outline'>
+                  {t('Total')}{' '}
+                  {masked
+                    ? '••••'
+                    : formatLogQuota(group.total?.period_quota || 0)}
+                </Badge>
+              </div>
+              <div className='overflow-auto rounded-lg border'>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('Started')}</TableHead>
+                      <TableHead>{t('Ended')}</TableHead>
+                      <TableHead className='text-right'>{t('Total')}</TableHead>
+                      <TableHead className='text-right'>
+                        {t('Requests')}
+                      </TableHead>
+                      <TableHead className='text-right'>
+                        {t('Actions')}
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(group.sessions || []).map((session) => (
+                      <TableRow key={session.id}>
+                        <TableCell className='font-mono'>
+                          {formatDateTime(session.started_at)}
+                        </TableCell>
+                        <TableCell className='font-mono'>
+                          {session.ended_at
+                            ? formatDateTime(session.ended_at)
+                            : t('Active')}
+                        </TableCell>
+                        <TableCell className='text-right font-mono'>
+                          {masked
+                            ? '••••'
+                            : formatLogQuota(session.total_quota || 0)}
+                        </TableCell>
+                        <TableCell className='text-right font-mono'>
+                          {formatCount(session.request_count)}
+                        </TableCell>
+                        <TableCell className='text-right'>
+                          <Button
+                            variant={
+                              session.id === selectedSessionId
+                                ? 'secondary'
+                                : 'outline'
+                            }
+                            size='sm'
+                            onClick={() => onSelectSession(session)}
+                          >
+                            {t('View')}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 export function CarpoolStatsPage() {
+  const { t } = useTranslation()
   const { sensitiveVisible } = useUsageLogsContext()
+  const isAdmin = useIsAdmin()
+  const queryClient = useQueryClient()
   const [now, setNow] = useState(() => Date.now())
+  const [selectedGroup, setSelectedGroup] = useState('')
+  const [selectedMonth, setSelectedMonth] = useState('')
+  const [selectedSessionId, setSelectedSessionId] = useState<number | null>(
+    null
+  )
+  const [finishDialogOpen, setFinishDialogOpen] = useState(false)
+  const [finishCode, setFinishCode] = useState('')
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [])
 
-  const statusQuery = useQuery({
-    queryKey: ['carnival-status', CARPOOL_GROUP],
-    queryFn: async () => {
-      const result = await getCarnivalStatus({ group: CARPOOL_GROUP })
-      if (!result.success) return null
-      return result.data || null
-    },
+  const groupsQuery = useQuery({
+    queryKey: ['carpool-groups'],
+    queryFn: getCarpoolGroups,
+    staleTime: 60_000,
+  })
+  const groupOptions = groupsQuery.data?.groups || []
+  const group =
+    selectedGroup || groupsQuery.data?.default_group || DEFAULT_CARPOOL_GROUP
+
+  useEffect(() => {
+    if (selectedGroup || groupOptions.length === 0) return
+    const defaultGroup =
+      groupsQuery.data?.default_group || DEFAULT_CARPOOL_GROUP
+    setSelectedGroup(
+      groupOptions.includes(defaultGroup) ? defaultGroup : groupOptions[0]
+    )
+  }, [groupOptions, groupsQuery.data?.default_group, selectedGroup])
+
+  const carpoolStatusQuery = useQuery({
+    queryKey: ['carpool-status', group],
+    queryFn: () => getCarpoolStatus({ group }),
+    enabled: !!group,
     placeholderData: (previousData) => previousData,
     refetchInterval: 15_000,
   })
-  const active = statusQuery.data?.active
+
+  const historyQuery = useQuery({
+    queryKey: ['carpool-history', group, selectedMonth],
+    queryFn: () =>
+      getCarpoolHistory({
+        group,
+        month: selectedMonth || undefined,
+      }),
+    enabled: !!group,
+    placeholderData: (previousData) => previousData,
+  })
+
+  useEffect(() => {
+    if (!selectedMonth && historyQuery.data?.selected_month) {
+      setSelectedMonth(historyQuery.data.selected_month)
+    }
+  }, [historyQuery.data?.selected_month, selectedMonth])
+
+  const carnivalStatusQuery = useQuery({
+    queryKey: ['carnival-status', group],
+    queryFn: async () => {
+      const result = await getCarnivalStatus({ group })
+      if (!result.success) return null
+      return result.data || null
+    },
+    enabled: !!group,
+    placeholderData: (previousData) => previousData,
+    refetchInterval: 15_000,
+  })
+
+  const selectedSession = useMemo(() => {
+    if (selectedSessionId == null) return null
+    for (const historyGroup of historyQuery.data?.groups || []) {
+      const session = (historyGroup.sessions || []).find(
+        (item) => item.id === selectedSessionId
+      )
+      if (session) return session
+    }
+    return null
+  }, [historyQuery.data?.groups, selectedSessionId])
+
+  const carpoolActiveSession = carpoolStatusQuery.data?.active || null
+  const currentOpen = Boolean(selectedSession || carpoolActiveSession)
+  const active = carnivalStatusQuery.data?.active
   const activeElapsed = useMemo(
     () =>
       active ? Math.max(0, Math.floor(now / 1000) - active.started_at) : 0,
@@ -1329,25 +1596,228 @@ export function CarpoolStatsPage() {
   )
   const masked = !sensitiveVisible
 
+  const invalidateCarpool = () => {
+    queryClient.invalidateQueries({ queryKey: ['carpool-groups'] })
+    queryClient.invalidateQueries({ queryKey: ['carpool-status', group] })
+    queryClient.invalidateQueries({ queryKey: ['carpool-history', group] })
+    queryClient.invalidateQueries({
+      queryKey: ['carpool-usage-summary', group],
+    })
+    queryClient.invalidateQueries({
+      queryKey: ['sub2api-upstream-usage', group],
+    })
+    queryClient.invalidateQueries({ queryKey: ['carnival-status', group] })
+    queryClient.invalidateQueries({ queryKey: ['carnival-history', group] })
+    queryClient.invalidateQueries({ queryKey: ['usage-logs-stats'] })
+  }
+
+  const startMutation = useMutation({
+    mutationFn: async () => {
+      const result = await startCarpool({ group })
+      if (!result.success) {
+        throw new Error(result.message || t('Operation failed'))
+      }
+      return result.data
+    },
+    onSuccess: () => {
+      setSelectedSessionId(null)
+      invalidateCarpool()
+      toast.success('拼车已开启')
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : '开启拼车失败')
+    },
+  })
+
+  const finishMutation = useMutation({
+    mutationFn: async () => {
+      const result = await finishCarpool({ group, code: finishCode })
+      if (!result.success) {
+        throw new Error(result.message || t('Operation failed'))
+      }
+      return result.data
+    },
+    onSuccess: () => {
+      setFinishDialogOpen(false)
+      setFinishCode('')
+      setSelectedSessionId(null)
+      invalidateCarpool()
+      toast.success('拼车已结束')
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : '结束拼车失败')
+    },
+  })
+
+  const refreshAll = () => {
+    void groupsQuery.refetch()
+    void carpoolStatusQuery.refetch()
+    void historyQuery.refetch()
+    void carnivalStatusQuery.refetch()
+    queryClient.invalidateQueries({
+      queryKey: ['carpool-usage-summary', group],
+    })
+    queryClient.invalidateQueries({
+      queryKey: ['sub2api-upstream-usage', group],
+    })
+  }
+
   return (
     <div className='flex h-full min-h-0 flex-col gap-4 overflow-auto pb-4'>
-      <div className='grid shrink-0 gap-4 2xl:grid-cols-[minmax(360px,0.85fr)_minmax(0,1.35fr)]'>
-        <UpstreamQuotaCard masked={masked} />
-        <CarpoolUsageSummaryCard masked={masked} />
+      <div className='bg-background/80 sticky top-0 z-10 flex shrink-0 flex-col gap-3 border-b pb-3 backdrop-blur md:flex-row md:items-center md:justify-between'>
+        <div className='min-w-0'>
+          <div className='flex flex-wrap items-center gap-2'>
+            <h2 className='text-lg font-semibold'>{t('Carpool Stats')}</h2>
+            <Badge variant={currentOpen ? 'default' : 'outline'}>
+              {currentOpen ? t('Active') : '未开启'}
+            </Badge>
+          </div>
+          <div className='text-muted-foreground mt-1 truncate text-sm'>
+            {selectedSession
+              ? `正在查看历史拼车：${formatSessionRange(selectedSession)}`
+              : carpoolActiveSession
+                ? formatSessionRange(carpoolActiveSession)
+                : `${group} 当前没有进行中的拼车`}
+          </div>
+        </div>
+
+        <div className='flex flex-wrap items-center gap-2'>
+          <Select
+            items={groupOptions.map((item) => ({ value: item, label: item }))}
+            value={group}
+            onValueChange={(value) => {
+              setSelectedGroup(value)
+              setSelectedSessionId(null)
+              setSelectedMonth('')
+            }}
+          >
+            <SelectTrigger className='min-w-40'>
+              <SelectValue placeholder='选择分组' />
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              <SelectGroup>
+                {groupOptions.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {item}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Button
+            variant='outline'
+            size='sm'
+            className='gap-1.5'
+            onClick={refreshAll}
+          >
+            <RefreshCw className='size-3.5' />
+            {t('Refresh')}
+          </Button>
+          {selectedSession ? (
+            <Button
+              variant='secondary'
+              size='sm'
+              onClick={() => setSelectedSessionId(null)}
+            >
+              查看当前拼车
+            </Button>
+          ) : null}
+          {isAdmin ? (
+            <>
+              <Button
+                size='sm'
+                className='gap-1.5'
+                disabled={
+                  !!carpoolActiveSession || startMutation.isPending || !group
+                }
+                onClick={() => startMutation.mutate()}
+              >
+                <Play className='size-3.5' />
+                开启拼车
+              </Button>
+              <Button
+                variant='outline'
+                size='sm'
+                className='gap-1.5'
+                disabled={!carpoolActiveSession || finishMutation.isPending}
+                onClick={() => setFinishDialogOpen(true)}
+              >
+                <Square className='size-3.5' />
+                结束拼车
+              </Button>
+            </>
+          ) : null}
+        </div>
       </div>
 
-      {statusQuery.isLoading && !statusQuery.data ? (
+      <div className='grid shrink-0 gap-4 2xl:grid-cols-[minmax(360px,0.85fr)_minmax(0,1.35fr)]'>
+        <UpstreamQuotaCard
+          group={group}
+          currentOpen={currentOpen}
+          masked={masked}
+        />
+        <CarpoolUsageSummaryCard
+          group={group}
+          currentOpen={currentOpen}
+          sessionId={selectedSessionId}
+          masked={masked}
+        />
+      </div>
+
+      {carnivalStatusQuery.isLoading && !carnivalStatusQuery.data ? (
         <Skeleton className='h-72 w-full rounded-xl' />
       ) : (
         <CarnivalUsageCard
+          group={group}
+          currentOpen={currentOpen}
           active={active}
           activeElapsed={activeElapsed}
           masked={masked}
           onRefresh={() => {
-            void statusQuery.refetch()
+            void carnivalStatusQuery.refetch()
           }}
         />
       )}
+
+      <CarpoolHistoryCard
+        history={historyQuery.data}
+        selectedMonth={selectedMonth}
+        selectedSessionId={selectedSessionId}
+        isFetching={historyQuery.isFetching}
+        masked={masked}
+        onMonthChange={(month) => setSelectedMonth(month)}
+        onSelectSession={(session) => setSelectedSessionId(session.id)}
+      />
+
+      <Dialog
+        open={finishDialogOpen}
+        onOpenChange={setFinishDialogOpen}
+        title='结束拼车'
+        description='请输入系统设置中配置的拼车结束 2FA 密码'
+        footer={
+          <>
+            <Button
+              variant='outline'
+              onClick={() => setFinishDialogOpen(false)}
+            >
+              {t('Cancel')}
+            </Button>
+            <Button
+              disabled={finishMutation.isPending}
+              onClick={() => finishMutation.mutate()}
+            >
+              结束拼车
+            </Button>
+          </>
+        }
+      >
+        <Input
+          type='password'
+          value={finishCode}
+          placeholder='输入拼车结束 2FA 密码'
+          onChange={(event) => setFinishCode(event.target.value)}
+        />
+      </Dialog>
     </div>
   )
 }

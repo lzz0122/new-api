@@ -208,6 +208,13 @@ export interface UpstreamUsageRateLimit {
   reset_at?: string
 }
 
+export interface UpstreamUsageConcurrency {
+  used: number
+  limit?: number
+  remaining?: number
+  updated_at?: string
+}
+
 export interface UpstreamUsageSnapshot {
   group: string
   base_url: string
@@ -215,6 +222,7 @@ export interface UpstreamUsageSnapshot {
   masked_key?: string
   key_status?: string
   upstream_group?: string
+  concurrency?: UpstreamUsageConcurrency
   rate_limits: UpstreamUsageRateLimit[]
   updated_at: number
   next_refresh_at: number
@@ -263,6 +271,42 @@ export interface CarnivalHistorySnapshot {
   sessions: CarnivalSessionSummary[]
   month_total: CarnivalAggregateSummary
   all_total: CarnivalAggregateSummary
+}
+
+export interface CarpoolSessionSummary {
+  id: number
+  group: string
+  started_at: number
+  ended_at: number
+  duration_seconds: number
+  since_end_seconds?: number
+  total_quota: number
+  total_tokens: number
+  request_count: number
+}
+
+export interface CarpoolStatusSnapshot {
+  group: string
+  active: CarpoolSessionSummary | null
+  last: CarpoolSessionSummary | null
+  server_time: number
+}
+
+export interface CarpoolHistoryGroup {
+  group: string
+  total: Partial<CarpoolUsageTotals>
+  sessions: CarpoolSessionSummary[]
+}
+
+export interface CarpoolHistorySnapshot {
+  months: string[]
+  selected_month: string
+  groups: CarpoolHistoryGroup[]
+}
+
+export interface CarpoolGroupsSnapshot {
+  groups: string[]
+  default_group: string
 }
 
 export interface CarpoolUsageDailySummary {
@@ -329,11 +373,13 @@ export interface CarpoolUsageTotals {
 
 export interface CarpoolUsageSummarySnapshot {
   group: string
-  period: 'week' | 'month'
+  period: 'week' | 'month' | 'session'
   start_date: string
   end_date: string
   last_run_at: string
   quota_per_unit: number
+  active?: boolean
+  session?: CarpoolSessionSummary
   totals: CarpoolUsageTotals
   last_sync?: {
     delta_quota: number

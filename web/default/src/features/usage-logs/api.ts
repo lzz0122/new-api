@@ -28,6 +28,9 @@ import type {
   UserInfo,
   CarnivalHistorySnapshot,
   CarnivalStatusSnapshot,
+  CarpoolGroupsSnapshot,
+  CarpoolHistorySnapshot,
+  CarpoolStatusSnapshot,
   CarpoolUsageSummarySnapshot,
   UpstreamUsageSnapshot,
 } from './types'
@@ -158,13 +161,71 @@ export async function finishCarnival(params: { group?: string }): Promise<{
 export async function getCarpoolUsageSummary(params: {
   group?: string
   period?: 'week' | 'month'
+  scope?: 'session'
+  session_id?: number
 }): Promise<CarpoolUsageSummarySnapshot> {
   const queryParams = buildQueryParams({
     group: params.group || '拼车',
     period: params.period || 'week',
+    scope: params.scope,
+    session_id: params.session_id || undefined,
   })
   const res = await api.get(`/api/carpool-usage/summary?${queryParams}`)
   return res.data?.data || res.data
+}
+
+export async function getCarpoolGroups(): Promise<CarpoolGroupsSnapshot> {
+  const res = await api.get('/api/carpool-usage/groups')
+  return res.data?.data || res.data
+}
+
+export async function getCarpoolStatus(params: {
+  group?: string
+}): Promise<CarpoolStatusSnapshot> {
+  const queryParams = buildQueryParams({
+    group: params.group || '拼车',
+  })
+  const res = await api.get(`/api/carpool-usage/status?${queryParams}`)
+  return res.data?.data || res.data
+}
+
+export async function getCarpoolHistory(params: {
+  group?: string
+  month?: string
+}): Promise<CarpoolHistorySnapshot> {
+  const queryParams = buildQueryParams({
+    group: params.group || undefined,
+    month: params.month || undefined,
+  })
+  const res = await api.get(`/api/carpool-usage/history?${queryParams}`)
+  return res.data?.data || res.data
+}
+
+export async function startCarpool(params: { group?: string }): Promise<{
+  success: boolean
+  message?: string
+  data?: CarpoolStatusSnapshot
+}> {
+  const queryParams = buildQueryParams({
+    group: params.group || '拼车',
+  })
+  const res = await api.post(`/api/carpool-usage/start?${queryParams}`)
+  return res.data
+}
+
+export async function finishCarpool(params: {
+  group?: string
+  code: string
+}): Promise<{
+  success: boolean
+  message?: string
+  data?: CarpoolStatusSnapshot
+}> {
+  const res = await api.post('/api/carpool-usage/finish', {
+    group: params.group || '拼车',
+    code: params.code,
+  })
+  return res.data
 }
 
 export async function getUserInfo(
