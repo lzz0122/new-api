@@ -43,6 +43,18 @@ var tokenGroupPreferredChannels = struct {
 	channels: make(map[string][]int),
 }
 
+type tokenGroupProbeSchedule struct {
+	BlockedUntil int64
+	ProbeModel   string
+}
+
+var tokenGroupProbeSchedules = struct {
+	sync.Mutex
+	schedules map[string]tokenGroupProbeSchedule
+}{
+	schedules: make(map[string]tokenGroupProbeSchedule),
+}
+
 type tokenGroupFailureObservation struct {
 	ExpiresAt         int64
 	FailedChannelIDs  map[int]struct{}
@@ -235,7 +247,11 @@ func IsTokenGroupCooling(tokenID int, group string, cfg model.TokenGroupConfig) 
 			tokenGroupHealth.Unlock()
 			return false, "", 0
 		}
+		scheduleTokenGroupProbe(tokenID, group, cfg, state)
 		return true, state.LastReason, state.BlockedUntil
+	}
+	if state.ProbeModel != "" {
+		scheduleTokenGroupProbe(tokenID, group, cfg, state)
 	}
 	return true, state.LastReason, state.BlockedUntil
 }
@@ -547,16 +563,39 @@ func scheduleTokenGroupProbe(tokenID int, group string, cfg model.TokenGroupConf
 	if len(cfg.Groups) <= 1 || state.ProbeModel == "" || group == "" || tokenID <= 0 {
 		return
 	}
+	key := tokenGroupHealthKey(tokenID, group)
+	schedule := tokenGroupProbeSchedule{
+		BlockedUntil: state.BlockedUntil,
+		ProbeModel:   state.ProbeModel,
+	}
+	tokenGroupProbeSchedules.Lock()
+	if current, ok := tokenGroupProbeSchedules.schedules[key]; ok && current == schedule {
+		tokenGroupProbeSchedules.Unlock()
+		return
+	}
+	tokenGroupProbeSchedules.schedules[key] = schedule
+	tokenGroupProbeSchedules.Unlock()
+
 	delay := time.Until(time.Unix(state.BlockedUntil, 0))
 	if delay < 0 {
 		delay = 0
 	}
+	common.SysLog(fmt.Sprintf("token group probe scheduled: token=%d group=%s model=%s delay=%s", tokenID, group, state.ProbeModel, delay.Round(time.Second)))
 	gopool.Go(func() {
 		timer := time.NewTimer(delay)
 		defer timer.Stop()
 		<-timer.C
+		defer clearTokenGroupProbeSchedule(key, schedule)
 		probeTokenGroup(tokenID, group, cfg, state)
 	})
+}
+
+func clearTokenGroupProbeSchedule(key string, schedule tokenGroupProbeSchedule) {
+	tokenGroupProbeSchedules.Lock()
+	defer tokenGroupProbeSchedules.Unlock()
+	if current, ok := tokenGroupProbeSchedules.schedules[key]; ok && current == schedule {
+		delete(tokenGroupProbeSchedules.schedules, key)
+	}
 }
 
 func probeTokenGroup(tokenID int, group string, cfg model.TokenGroupConfig, expected tokenGroupHealthState) {
@@ -575,6 +614,7 @@ func probeTokenGroup(tokenID int, group string, cfg model.TokenGroupConfig, expe
 	settings := effectiveTokenGroupItem(cfg, group)
 	recovered, availableChannelIDs, probeErr := probeTokenGroupRecovery(group, current.ProbeModel, settings)
 	if recovered {
+		common.SysLog(fmt.Sprintf("token group probe recovered: token=%d group=%s model=%s available_channels=%v", tokenID, group, current.ProbeModel, availableChannelIDs))
 		setTokenGroupPreferredChannels(tokenID, group, availableChannelIDs)
 		tokenGroupHealth.Lock()
 		if settings.RecoveryStrategy == model.TokenGroupRecoveryStrategySticky {
@@ -598,6 +638,7 @@ func probeTokenGroup(tokenID int, group string, cfg model.TokenGroupConfig, expe
 	if probeErr != nil {
 		reason = "探活失败：" + common.LocalLogPreview(probeErr.Error())
 	}
+	common.SysLog(fmt.Sprintf("token group probe failed: token=%d group=%s model=%s reason=%s", tokenID, group, current.ProbeModel, reason))
 	next := tokenGroupHealthState{
 		BlockedUntil:        time.Now().Add(time.Duration(cooldown) * time.Second).Unix(),
 		LastReason:          reason,

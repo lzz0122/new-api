@@ -24,6 +24,9 @@ func resetTokenGroupHealth(t *testing.T) {
 	tokenGroupPreferredChannels.Lock()
 	tokenGroupPreferredChannels.channels = map[string][]int{}
 	tokenGroupPreferredChannels.Unlock()
+	tokenGroupProbeSchedules.Lock()
+	tokenGroupProbeSchedules.schedules = map[string]tokenGroupProbeSchedule{}
+	tokenGroupProbeSchedules.Unlock()
 	tokenGroupFailureObservations.Lock()
 	tokenGroupFailureObservations.observations = map[string]tokenGroupFailureObservation{}
 	tokenGroupFailureObservations.Unlock()
@@ -34,6 +37,9 @@ func resetTokenGroupHealth(t *testing.T) {
 		tokenGroupPreferredChannels.Lock()
 		tokenGroupPreferredChannels.channels = map[string][]int{}
 		tokenGroupPreferredChannels.Unlock()
+		tokenGroupProbeSchedules.Lock()
+		tokenGroupProbeSchedules.schedules = map[string]tokenGroupProbeSchedule{}
+		tokenGroupProbeSchedules.Unlock()
 		tokenGroupFailureObservations.Lock()
 		tokenGroupFailureObservations.observations = map[string]tokenGroupFailureObservation{}
 		tokenGroupFailureObservations.Unlock()
@@ -84,6 +90,29 @@ func TestMarkTokenGroupFailureCoolsGroupAndSummarizes(t *testing.T) {
 	require.Equal(t, http.StatusGatewayTimeout, state.LastStatus)
 	require.Equal(t, 3, state.ProbeTimeout)
 	require.Empty(t, state.ProbeModel, "tests omit the original model so no async probe is scheduled")
+}
+
+func TestMarkTokenGroupFailureSchedulesProbeWhenModelKnown(t *testing.T) {
+	resetTokenGroupHealth(t)
+	cfg := fallbackTokenGroupConfig("primary", "secondary")
+	ctx := tokenGroupTestContext(t, 110, cfg)
+	common.SetContextKey(ctx, constant.ContextKeyOriginalModel, "gpt-test")
+	apiErr := types.NewErrorWithStatusCode(errors.New("upstream timeout"), types.ErrorCodeDoRequestFailed, http.StatusGatewayTimeout)
+
+	require.True(t, MarkTokenGroupFailure(ctx, "primary", cfg, apiErr))
+
+	key := tokenGroupHealthKey(110, "primary")
+	tokenGroupHealth.RLock()
+	state := tokenGroupHealth.states[key]
+	tokenGroupHealth.RUnlock()
+	require.Equal(t, "gpt-test", state.ProbeModel)
+
+	tokenGroupProbeSchedules.Lock()
+	schedule, exists := tokenGroupProbeSchedules.schedules[key]
+	tokenGroupProbeSchedules.Unlock()
+	require.True(t, exists)
+	require.Equal(t, state.BlockedUntil, schedule.BlockedUntil)
+	require.Equal(t, "gpt-test", schedule.ProbeModel)
 }
 
 func TestSingleGroupDoesNotEnterTokenGroupFailover(t *testing.T) {
@@ -225,6 +254,33 @@ func TestProbeThenSwitchRecoveryClearsExpiredCoolingState(t *testing.T) {
 	_, exists := tokenGroupHealth.states[tokenGroupHealthKey(106, "primary")]
 	tokenGroupHealth.RUnlock()
 	require.False(t, exists)
+}
+
+func TestCoolingCheckBackfillsMissingProbeSchedule(t *testing.T) {
+	resetTokenGroupHealth(t)
+	cfg := fallbackTokenGroupConfig("primary", "secondary")
+	blockedUntil := time.Now().Add(time.Hour).Unix()
+	key := tokenGroupHealthKey(111, "primary")
+	tokenGroupHealth.Lock()
+	tokenGroupHealth.states[key] = tokenGroupHealthState{
+		BlockedUntil: blockedUntil,
+		LastReason:   "primary 分组返回 429：rate limited",
+		LastStatus:   http.StatusTooManyRequests,
+		ProbeModel:   "gpt-test",
+	}
+	tokenGroupHealth.Unlock()
+
+	cooling, reason, until := IsTokenGroupCooling(111, "primary", cfg)
+	require.True(t, cooling)
+	require.Contains(t, reason, "429")
+	require.Equal(t, blockedUntil, until)
+
+	tokenGroupProbeSchedules.Lock()
+	schedule, exists := tokenGroupProbeSchedules.schedules[key]
+	tokenGroupProbeSchedules.Unlock()
+	require.True(t, exists)
+	require.Equal(t, blockedUntil, schedule.BlockedUntil)
+	require.Equal(t, "gpt-test", schedule.ProbeModel)
 }
 
 func TestShouldTokenGroupFailoverStatusCodes(t *testing.T) {
