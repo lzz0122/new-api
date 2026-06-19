@@ -243,6 +243,7 @@ export const STATIC_I18N_KEYS = [
   'Daily',
   'Weekly',
   'Monthly',
+  'Refresh available in {{seconds}}s',
 
   // CC Switch dialog
   'Import to CC Switch',
@@ -427,6 +428,8 @@ export const STATIC_I18N_KEYS = [
   'API token management',
   'Usage Logs',
   'API usage records',
+  'Carpool Stats',
+  'Carpool quota statistics',
   'Drawing Logs',
   'Drawing task records',
   'Task Logs',

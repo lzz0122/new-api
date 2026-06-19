@@ -54,6 +54,32 @@ func validateTokenGroupForUser(c *gin.Context, tokenGroup string) bool {
 	return true
 }
 
+func normalizeAndValidateTokenGroupConfig(c *gin.Context, token *model.Token) bool {
+	if token == nil {
+		common.ApiError(c, fmt.Errorf("令牌为空"))
+		return false
+	}
+	cfg := token.ParseGroupConfig()
+	if len(cfg.Groups) == 0 && strings.TrimSpace(token.Group) != "" {
+		cfg = model.DefaultTokenGroupConfig(token.Group)
+	}
+	if len(cfg.Groups) == 0 {
+		token.Group = strings.TrimSpace(token.Group)
+		token.GroupConfig = ""
+		return validateTokenGroupForUser(c, token.Group)
+	}
+	for _, item := range cfg.Groups {
+		if !validateTokenGroupForUser(c, item.Group) {
+			return false
+		}
+	}
+	if err := token.SetGroupConfig(cfg); err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	return true
+}
+
 func GetAllTokens(c *gin.Context) {
 	userId := c.GetInt("id")
 	pageInfo := common.GetPageQuery(c)
@@ -225,7 +251,7 @@ func AddToken(c *gin.Context) {
 		return
 	}
 	token.Group = strings.TrimSpace(token.Group)
-	if !validateTokenGroupForUser(c, token.Group) {
+	if !normalizeAndValidateTokenGroupConfig(c, &token) {
 		return
 	}
 	key, err := common.GenerateKey()
@@ -248,6 +274,7 @@ func AddToken(c *gin.Context) {
 		AllowIps:           token.AllowIps,
 		Group:              token.Group,
 		CrossGroupRetry:    token.CrossGroupRetry,
+		GroupConfig:        token.GroupConfig,
 	}
 	err = cleanToken.Insert()
 	if err != nil {
@@ -317,7 +344,7 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.Status = token.Status
 	} else {
 		token.Group = strings.TrimSpace(token.Group)
-		if !validateTokenGroupForUser(c, token.Group) {
+		if !normalizeAndValidateTokenGroupConfig(c, &token) {
 			return
 		}
 		// If you add more fields, please also update token.Update()
@@ -330,6 +357,7 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.AllowIps = token.AllowIps
 		cleanToken.Group = token.Group
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
+		cleanToken.GroupConfig = token.GroupConfig
 	}
 	err = cleanToken.Update()
 	if err != nil {

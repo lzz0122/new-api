@@ -110,6 +110,7 @@ const SystemSetting = () => {
     'fetch_setting.ip_list': [],
     'fetch_setting.allowed_ports': [],
     'fetch_setting.apply_ip_filter_for_domain': true,
+    'carpool.finish_2fa_code': '',
   });
 
   const [originInputs, setOriginInputs] = useState({});
@@ -609,6 +610,15 @@ const SystemSetting = () => {
     }
   };
 
+  const submitCarpoolSecurity = async () => {
+    await updateOptions([
+      {
+        key: 'carpool.finish_2fa_code',
+        value: inputs['carpool.finish_2fa_code'] || '',
+      },
+    ]);
+  };
+
   const submitLinuxDOOAuth = async () => {
     const options = [];
 
@@ -980,6 +990,26 @@ const SystemSetting = () => {
 
                   <Button onClick={submitSSRF} style={{ marginTop: 16 }}>
                     {t('更新SSRF防护设置')}
+                  </Button>
+                </Form.Section>
+              </Card>
+
+              <Card>
+                <Form.Section text={t('安全与限制')}>
+                  <Row
+                    gutter={{ xs: 8, sm: 16, md: 24, lg: 24, xl: 24, xxl: 24 }}
+                  >
+                    <Col xs={24} sm={24} md={12} lg={12} xl={12}>
+                      <Form.Input
+                        field='carpool.finish_2fa_code'
+                        label={t('拼车结束 2FA 密码')}
+                        placeholder={t('用于结束拼车，不是登录 2FA')}
+                        type='password'
+                      />
+                    </Col>
+                  </Row>
+                  <Button onClick={submitCarpoolSecurity}>
+                    {t('保存安全与限制设置')}
                   </Button>
                 </Form.Section>
               </Card>

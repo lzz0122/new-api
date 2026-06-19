@@ -308,6 +308,11 @@ func SetApiRouter(router *gin.Engine) {
 		logRoute.DELETE("/", middleware.AdminAuth(), controller.DeleteHistoryLogs)
 		logRoute.GET("/stat", middleware.AdminAuth(), controller.GetLogsStat)
 		logRoute.GET("/self/stat", middleware.UserAuth(), controller.GetLogsSelfStat)
+		logRoute.GET("/upstream-usage", middleware.UserAuth(), controller.GetSub2APIUsage)
+		logRoute.GET("/carnival", middleware.UserAuth(), controller.GetCarnivalStatus)
+		logRoute.GET("/carnival/history", middleware.UserAuth(), controller.GetCarnivalHistory)
+		logRoute.POST("/carnival/start", middleware.AdminAuth(), controller.StartCarnival)
+		logRoute.POST("/carnival/finish", middleware.AdminAuth(), controller.FinishCarnival)
 		logRoute.GET("/channel_affinity_usage_cache", middleware.AdminAuth(), controller.GetChannelAffinityUsageCacheStats)
 		logRoute.GET("/search", middleware.AdminAuth(), controller.SearchAllLogs)
 		logRoute.GET("/self", middleware.UserAuth(), controller.GetUserLogs)
@@ -322,6 +327,18 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			logRoute.GET("/token", middleware.TokenAuthReadOnly(), controller.GetLogByKey)
 		}
+
+		carpoolUsageRoute := apiRouter.Group("/carpool-usage")
+		carpoolUsageRoute.Use(middleware.UserAuth())
+		{
+			carpoolUsageRoute.GET("/groups", controller.GetCarpoolGroups)
+			carpoolUsageRoute.GET("/status", controller.GetCarpoolStatus)
+			carpoolUsageRoute.GET("/summary", controller.GetCarpoolUsageSummary)
+			carpoolUsageRoute.GET("/history", controller.GetCarpoolHistory)
+			carpoolUsageRoute.POST("/start", middleware.AdminAuth(), controller.StartCarpool)
+			carpoolUsageRoute.POST("/finish", middleware.AdminAuth(), controller.FinishCarpool)
+		}
+
 		groupRoute := apiRouter.Group("/group")
 		groupRoute.Use(middleware.AdminAuth())
 		{

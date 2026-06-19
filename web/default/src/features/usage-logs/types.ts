@@ -200,6 +200,147 @@ export interface LogStatistics {
   tpm: number
 }
 
+export interface UpstreamUsageRateLimit {
+  window: string
+  limit: number
+  used: number
+  remaining: number
+  reset_at?: string
+}
+
+export interface UpstreamUsageSnapshot {
+  group: string
+  base_url: string
+  key_name?: string
+  masked_key?: string
+  key_status?: string
+  upstream_group?: string
+  rate_limits: UpstreamUsageRateLimit[]
+  updated_at: number
+  next_refresh_at: number
+  cached: boolean
+}
+
+export interface CarnivalUserUsageSummary {
+  user_id: number
+  username: string
+  quota: number
+  token_used: number
+  request_count: number
+}
+
+export interface CarnivalSessionSummary {
+  id: number
+  group: string
+  started_at: number
+  ended_at: number
+  duration_seconds: number
+  since_end_seconds: number
+  total_quota: number
+  total_tokens: number
+  request_count: number
+  users: CarnivalUserUsageSummary[]
+}
+
+export interface CarnivalAggregateSummary {
+  total_quota: number
+  total_tokens: number
+  request_count: number
+  users: CarnivalUserUsageSummary[]
+}
+
+export interface CarnivalStatusSnapshot {
+  group: string
+  active: CarnivalSessionSummary | null
+  last: CarnivalSessionSummary | null
+  server_time: number
+}
+
+export interface CarnivalHistorySnapshot {
+  group: string
+  months: string[]
+  selected_month: string
+  sessions: CarnivalSessionSummary[]
+  month_total: CarnivalAggregateSummary
+  all_total: CarnivalAggregateSummary
+}
+
+export interface CarpoolUsageDailySummary {
+  date: string
+  quota: number
+}
+
+export interface CarpoolUsageTokenSummary {
+  token_id: number
+  user_id: number
+  name: string
+  period_quota: number
+  cumulative_quota: number
+  gross_period_quota: number
+  gross_cumulative_quota: number
+  carnival_period_quota: number
+  carnival_cumulative_quota: number
+  current_carnival_quota: number
+  period_token_used: number
+  cumulative_token_used: number
+  period_request_count: number
+  cumulative_request_count: number
+  active: boolean
+  last_seen_at: string
+}
+
+export interface CarpoolUsageUserSummary {
+  user_id: number
+  username: string
+  email: string
+  period_quota: number
+  cumulative_quota: number
+  gross_period_quota: number
+  gross_cumulative_quota: number
+  carnival_period_quota: number
+  carnival_cumulative_quota: number
+  current_carnival_quota: number
+  period_token_used: number
+  cumulative_token_used: number
+  period_request_count: number
+  cumulative_request_count: number
+  active_tokens: number
+  known_tokens: number
+  daily: CarpoolUsageDailySummary[]
+  tokens: CarpoolUsageTokenSummary[]
+}
+
+export interface CarpoolUsageTotals {
+  period_quota: number
+  cumulative_quota: number
+  gross_period_quota: number
+  gross_cumulative_quota: number
+  carnival_period_quota: number
+  carnival_cumulative_quota: number
+  current_carnival_quota: number
+  period_token_used: number
+  cumulative_token_used: number
+  period_request_count: number
+  cumulative_request_count: number
+  users: number
+  active_tokens: number
+  known_tokens: number
+}
+
+export interface CarpoolUsageSummarySnapshot {
+  group: string
+  period: 'week' | 'month'
+  start_date: string
+  end_date: string
+  last_run_at: string
+  quota_per_unit: number
+  totals: CarpoolUsageTotals
+  last_sync?: {
+    delta_quota: number
+  }
+  users: CarpoolUsageUserSummary[]
+}
+
 // ============================================================================
 // Drawing Logs (Midjourney) Types
 // ============================================================================

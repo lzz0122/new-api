@@ -311,6 +311,9 @@ export function ApiKeysTable() {
       getRowClassName={(row) =>
         isDisabledApiKeyRow(row.original) ? DISABLED_ROW_DESKTOP : undefined
       }
+      getColumnClassName={(columnId) =>
+        columnId === 'group' ? 'max-w-0 overflow-hidden text-center' : undefined
+      }
       bulkActions={<DataTableBulkActions table={table} />}
     />
   )

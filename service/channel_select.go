@@ -86,6 +86,91 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	selectGroup := param.TokenGroup
 	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
 
+	if cfg, ok := GetTokenGroupConfigFromContext(param.Ctx); ok && len(cfg.Groups) > 1 && param.TokenGroup != "auto" {
+		tokenID := common.GetContextKeyInt(param.Ctx, constant.ContextKeyTokenId)
+		startGroupIndex := 0
+		stickyRecoveredIndexes := make([]int, 0)
+		if lastGroupIndex, exists := common.GetContextKey(param.Ctx, constant.ContextKeyTokenGroupIndex); exists {
+			if idx, ok := lastGroupIndex.(int); ok {
+				startGroupIndex = idx
+			}
+		}
+		for i := startGroupIndex; i < len(cfg.Groups); i++ {
+			group := cfg.Groups[i].Group
+			if cooling, reason, until := IsTokenGroupCooling(tokenID, group, cfg); cooling {
+				AppendTokenGroupFailure(param.Ctx, FormatTokenGroupCoolingReason(group, reason, until))
+				if until == 0 && tokenGroupRecoveryStrategy(cfg, group) == model.TokenGroupRecoveryStrategySticky {
+					stickyRecoveredIndexes = append(stickyRecoveredIndexes, i)
+				}
+				common.SetContextKey(param.Ctx, constant.ContextKeyTokenGroupIndex, i+1)
+				param.SetRetry(0)
+				continue
+			}
+			priorityRetry := param.GetRetry()
+			if i > startGroupIndex {
+				priorityRetry = 0
+			}
+			logger.LogDebug(param.Ctx, "Token selecting group: %s, priorityRetry: %d", group, priorityRetry)
+			if preferredIDs := getTokenGroupPreferredChannels(tokenID, group); len(preferredIDs) > 0 {
+				channel, err = model.GetRandomSatisfiedChannelFromIDs(group, param.ModelName, priorityRetry, preferredIDs)
+				if err != nil {
+					return nil, group, err
+				}
+				if channel == nil {
+					setTokenGroupPreferredChannels(tokenID, group, nil)
+				}
+			}
+			if channel == nil {
+				channel, err = model.GetRandomSatisfiedChannel(group, param.ModelName, priorityRetry)
+			}
+			if err != nil {
+				return nil, group, err
+			}
+			if channel == nil {
+				common.SetContextKey(param.Ctx, constant.ContextKeyTokenGroupIndex, i+1)
+				param.SetRetry(0)
+				continue
+			}
+			common.SetContextKey(param.Ctx, constant.ContextKeyUsingGroup, group)
+			selectGroup = group
+			if priorityRetry >= common.RetryTimes {
+				common.SetContextKey(param.Ctx, constant.ContextKeyTokenGroupIndex, i+1)
+				param.SetRetry(0)
+				param.ResetRetryNextTry()
+			} else {
+				common.SetContextKey(param.Ctx, constant.ContextKeyTokenGroupIndex, i)
+			}
+			return channel, selectGroup, nil
+		}
+		for _, i := range stickyRecoveredIndexes {
+			group := cfg.Groups[i].Group
+			logger.LogDebug(param.Ctx, "Token selecting sticky recovered group: %s", group)
+			if preferredIDs := getTokenGroupPreferredChannels(tokenID, group); len(preferredIDs) > 0 {
+				channel, err = model.GetRandomSatisfiedChannelFromIDs(group, param.ModelName, 0, preferredIDs)
+				if err != nil {
+					return nil, group, err
+				}
+				if channel == nil {
+					setTokenGroupPreferredChannels(tokenID, group, nil)
+				}
+			}
+			if channel == nil {
+				channel, err = model.GetRandomSatisfiedChannel(group, param.ModelName, 0)
+			}
+			if err != nil {
+				return nil, group, err
+			}
+			if channel == nil {
+				continue
+			}
+			common.SetContextKey(param.Ctx, constant.ContextKeyUsingGroup, group)
+			common.SetContextKey(param.Ctx, constant.ContextKeyTokenGroupIndex, i)
+			param.SetRetry(0)
+			return channel, group, nil
+		}
+		return nil, selectGroup, nil
+	}
+
 	if param.TokenGroup == "auto" {
 		if len(setting.GetAutoGroups()) == 0 {
 			return nil, selectGroup, errors.New("auto groups is not enabled")

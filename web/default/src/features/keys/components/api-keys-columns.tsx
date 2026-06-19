@@ -16,10 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
 import { type ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
-import { getUserGroups } from '@/lib/api'
 import { formatQuota, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -33,7 +31,7 @@ import { DataTableColumnHeader } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge } from '@/components/status-badge'
 import { API_KEY_STATUSES } from '../constants'
-import { type ApiKey } from '../types'
+import { type ApiKey, type ApiKeyGroupConfig } from '../types'
 import {
   ApiKeyCell,
   ModelLimitsCell,
@@ -47,29 +45,23 @@ function getQuotaProgressColor(percentage: number): string {
   return '[&_[data-slot=progress-indicator]]:bg-emerald-500'
 }
 
-function useGroupRatios(): Record<string, number> {
-  const { data } = useQuery({
-    queryKey: ['user-self-groups'],
-    queryFn: getUserGroups,
-    staleTime: 5 * 60 * 1000,
-    select: (res) => {
-      if (!res.success || !res.data) return {}
-      const ratios: Record<string, number> = {}
-      for (const [group, info] of Object.entries(res.data)) {
-        if (typeof info.ratio === 'number') {
-          ratios[group] = info.ratio
-        }
-      }
-      return ratios
-    },
-  })
-
-  return data ?? {}
+function getApiKeyGroups(apiKey: ApiKey): string[] {
+  if (!apiKey.group_config) return apiKey.group ? [apiKey.group] : []
+  try {
+    const parsed = JSON.parse(apiKey.group_config) as Partial<ApiKeyGroupConfig>
+    const groups = (parsed.groups || [])
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .map((item) => item.group)
+      .filter(Boolean)
+    return groups.length > 0 ? groups : apiKey.group ? [apiKey.group] : []
+  } catch {
+    return apiKey.group ? [apiKey.group] : []
+  }
 }
 
 export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
   const { t } = useTranslation()
-  const groupRatios = useGroupRatios()
   return [
     {
       id: 'select',
@@ -199,19 +191,23 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
     {
       accessorKey: 'group',
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title={t('Group')} />
+        <DataTableColumnHeader
+          column={column}
+          title={t('Group')}
+          className='justify-center text-center'
+        />
       ),
       cell: ({ row }) => {
         const apiKey = row.original
-        const group = row.getValue('group') as string
-        const ratio = group && group !== 'auto' ? groupRatios[group] : undefined
+        const groups = getApiKeyGroups(apiKey)
+        const group = groups[0] || (row.getValue('group') as string)
 
         if (group === 'auto') {
           return (
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <span className='inline-flex items-center gap-1.5 text-xs' />
+                  <span className='flex w-full min-w-0 items-center justify-center gap-1.5 overflow-hidden text-xs' />
                 }
               >
                 <GroupBadge group='auto' />
@@ -233,9 +229,37 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
             </Tooltip>
           )
         }
-        return <GroupBadge group={group} ratio={ratio} />
+        if (groups.length > 1) {
+          const routeLabel = groups.join(' -> ')
+          return (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span className='flex w-full min-w-0 justify-center overflow-hidden' />
+                }
+              >
+                <StatusBadge
+                  label={routeLabel}
+                  autoColor={groups[0]}
+                  copyable={false}
+                  className='max-w-full min-w-0 shrink justify-center overflow-hidden px-2'
+                />
+              </TooltipTrigger>
+              <TooltipContent>
+                <span className='text-xs'>{routeLabel}</span>
+              </TooltipContent>
+            </Tooltip>
+          )
+        }
+        return (
+          <span className='flex w-full min-w-0 justify-center overflow-hidden'>
+            <GroupBadge group={group} className='max-w-full min-w-0 shrink' />
+          </span>
+        )
       },
-      size: 160,
+      size: 150,
+      minSize: 120,
+      maxSize: 170,
       meta: { label: t('Group'), mobileHidden: true },
     },
     {

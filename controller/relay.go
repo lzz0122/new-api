@@ -222,6 +222,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		if newAPIError == nil {
 			relayInfo.LastError = nil
+			service.MarkTokenGroupSuccess(c, relayInfo.UsingGroup)
 			return
 		}
 
@@ -229,6 +230,39 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		relayInfo.LastError = newAPIError
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
+
+		if service.ShouldTokenGroupFailover(newAPIError) {
+			cfg, hasCfg := service.GetTokenGroupConfigFromContext(c)
+			if hasCfg && len(cfg.Groups) > 1 {
+				currentGroup := relayInfo.UsingGroup
+				groupFailed := service.MarkTokenGroupFailure(c, currentGroup, cfg, newAPIError)
+				if !groupFailed {
+					tokenID := common.GetContextKeyInt(c, constant.ContextKeyTokenId)
+					if service.HasTokenGroupPreferredChannels(tokenID, currentGroup) {
+						retryParam.SetRetry(0)
+						retryParam.ResetRetryNextTry()
+						continue
+					}
+					if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
+						break
+					}
+					continue
+				}
+				if service.TokenGroupFailoverStrategy(cfg, currentGroup) == model.TokenGroupFailoverStrategyFallback &&
+					service.HasAvailableLaterTokenGroup(c, currentGroup) &&
+					service.PrepareNextTokenGroup(c, retryParam, currentGroup) {
+					continue
+				}
+				if service.TokenGroupFailoverStrategy(cfg, currentGroup) == model.TokenGroupFailoverStrategyFallback &&
+					service.PrepareRecoveredTokenGroup(c, retryParam) {
+					continue
+				}
+				if summary := service.TokenGroupFailureSummary(c); summary != "" {
+					newAPIError.SetMessage(fmt.Sprintf("分组调度失败：%s", summary))
+				}
+				break
+			}
+		}
 
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
 			break
@@ -305,12 +339,19 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	}
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
 
+	if selectGroup != "" {
+		info.UsingGroup = selectGroup
+		common.SetContextKey(c, constant.ContextKeyUsingGroup, selectGroup)
+	}
 	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
 
 	if err != nil {
 		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 	if channel == nil {
+		if summary := service.TokenGroupFailureSummary(c); summary != "" {
+			return nil, types.NewError(fmt.Errorf("所有分组均不可用：%s", summary), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
 		return nil, types.NewError(fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 

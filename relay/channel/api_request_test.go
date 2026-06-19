@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
@@ -31,6 +32,46 @@ func TestProcessHeaderOverride_ChannelTestSkipsPassthroughRules(t *testing.T) {
 	headers, err := processHeaderOverride(info, ctx)
 	require.NoError(t, err)
 	require.Empty(t, headers)
+}
+
+func TestClientWithResponseHeaderTimeoutClonesTransport(t *testing.T) {
+	t.Parallel()
+
+	transport := &http.Transport{}
+	client := &http.Client{Transport: transport}
+
+	result := clientWithResponseHeaderTimeout(client, 7)
+
+	require.NotSame(t, client, result)
+	require.Same(t, transport, client.Transport)
+	require.Zero(t, transport.ResponseHeaderTimeout)
+	resultTransport, ok := result.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.NotSame(t, transport, resultTransport)
+	require.Equal(t, 7*time.Second, resultTransport.ResponseHeaderTimeout)
+}
+
+func TestClientWithResponseHeaderTimeoutDisabled(t *testing.T) {
+	t.Parallel()
+
+	client := &http.Client{Transport: &http.Transport{}}
+
+	require.Same(t, client, clientWithResponseHeaderTimeout(client, 0))
+	require.Nil(t, clientWithResponseHeaderTimeout(nil, 7))
+}
+
+func TestClientWithResponseHeaderTimeoutUsesDefaultTransport(t *testing.T) {
+	t.Parallel()
+
+	client := &http.Client{}
+
+	result := clientWithResponseHeaderTimeout(client, 5)
+
+	require.NotSame(t, client, result)
+	require.Nil(t, client.Transport)
+	resultTransport, ok := result.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.Equal(t, 5*time.Second, resultTransport.ResponseHeaderTimeout)
 }
 
 func TestProcessHeaderOverride_ChannelTestSkipsClientHeaderPlaceholder(t *testing.T) {

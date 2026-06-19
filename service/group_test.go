@@ -18,7 +18,7 @@ func TestGetUserUsableGroupsMergesDefaultAndSpecialRules(t *testing.T) {
 	special := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup
 	special.Clear()
 	special.Set("jhl", map[string]string{
-		"+:jhl":     "jhl分组",
+		"+:jhl":      "jhl分组",
 		"-:default": "remove",
 	})
 
@@ -45,7 +45,7 @@ func TestGetUserUsableGroupsOnlyRulesOverrideDefaults(t *testing.T) {
 	special := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup
 	special.Clear()
 	special.Set("jhl", map[string]string{
-		"=:拼车":  "拼车分组",
+		"=:拼车": "拼车分组",
 		"=:jhl": "jhl分组",
 	})
 

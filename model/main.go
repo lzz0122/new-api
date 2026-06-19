@@ -264,6 +264,10 @@ func migrateDB() error {
 		&Redemption{},
 		&Ability{},
 		&Log{},
+		&CarnivalSession{},
+		&CarnivalUsage{},
+		&CarpoolSession{},
+		&CarpoolUsageDailyRecord{},
 		&Midjourney{},
 		&TopUp{},
 		&QuotaData{},
@@ -313,6 +317,10 @@ func migrateDBFast() error {
 		{&Redemption{}, "Redemption"},
 		{&Ability{}, "Ability"},
 		{&Log{}, "Log"},
+		{&CarnivalSession{}, "CarnivalSession"},
+		{&CarnivalUsage{}, "CarnivalUsage"},
+		{&CarpoolSession{}, "CarpoolSession"},
+		{&CarpoolUsageDailyRecord{}, "CarpoolUsageDailyRecord"},
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
 		{&QuotaData{}, "QuotaData"},
@@ -369,7 +377,10 @@ func migrateDBFast() error {
 
 func migrateLOGDB() error {
 	var err error
-	if err = LOG_DB.AutoMigrate(&Log{}); err != nil {
+	if err = LOG_DB.AutoMigrate(&Log{}, &CarnivalSession{}, &CarnivalUsage{}, &CarpoolSession{}, &CarpoolUsageDailyRecord{}); err != nil {
+		return err
+	}
+	if err = EnsureDefaultCarpoolSession(); err != nil {
 		return err
 	}
 	return nil

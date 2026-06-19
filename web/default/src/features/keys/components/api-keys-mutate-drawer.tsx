@@ -16,11 +16,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm, type SubmitErrorHandler } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, KeyRound, Settings2, WalletCards } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  KeyRound,
+  Pencil,
+  Plus,
+  Settings2,
+  Trash2,
+  WalletCards,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { getUserModels, getUserGroups } from '@/lib/api'
@@ -43,6 +53,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import {
   Sheet,
   SheetClose,
@@ -74,7 +85,7 @@ import {
   transformFormDataToPayload,
   transformApiKeyToFormDefaults,
 } from '../lib'
-import { type ApiKey } from '../types'
+import { type ApiKey, type ApiKeyGroupRoute } from '../types'
 import {
   ApiKeyGroupCombobox,
   type ApiKeyGroupOption,
@@ -134,9 +145,11 @@ export function ApiKeysMutateDrawer({
 
   // Load existing data when updating
   useEffect(() => {
+    let ignore = false
     if (open && isUpdate && currentRow) {
+      form.reset(transformApiKeyToFormDefaults(currentRow))
       getApiKey(currentRow.id).then((result) => {
-        if (result.success && result.data) {
+        if (!ignore && result.success && result.data) {
           form.reset(transformApiKeyToFormDefaults(result.data))
         }
       })
@@ -145,23 +158,34 @@ export function ApiKeysMutateDrawer({
         getApiKeyFormDefaultValues(defaultUseAutoGroup && backendHasAuto)
       )
     }
+
+    return () => {
+      ignore = true
+    }
   }, [open, isUpdate, currentRow, form, defaultUseAutoGroup, backendHasAuto])
 
-  // Correct group after groups load: if the form value is not in available groups, fall back
+  // Correct groups after groups load: if a value is not available, fall back
   useEffect(() => {
+    if (!open) return
     if (groups.length === 0) return
-    const currentGroup = form.getValues('group')
-    if (currentGroup && !groups.some((g) => g.value === currentGroup)) {
-      const fallback =
-        groups.find((g) => g.value === 'default')?.value ??
-        groups[0]?.value ??
-        ''
-      form.setValue('group', fallback)
-      if (currentGroup === 'auto') {
-        form.setValue('cross_group_retry', false)
-      }
+    const available = new Set(groups.map((g) => g.value))
+    const fallback =
+      groups.find((g) => g.value === 'default')?.value ?? groups[0]?.value ?? ''
+    const routes = form.getValues('group_routes') || []
+    const normalizedRoutes = routes
+      .filter((route) => route.group.trim())
+      .map((route, index) => ({ ...route, group: route.group, order: index + 1 }))
+    const nextRoutes = isUpdate
+      ? normalizedRoutes
+      : normalizedRoutes.filter((route) => available.has(route.group))
+    if (nextRoutes.length === 0 && fallback) {
+      nextRoutes.push({ group: fallback, order: 1 })
     }
-  }, [groups, form])
+    if (JSON.stringify(routes) !== JSON.stringify(nextRoutes)) {
+      form.setValue('group_routes', nextRoutes)
+      form.setValue('group', nextRoutes[0]?.group || '')
+    }
+  }, [open, isUpdate, groups, form])
 
   const onSubmit = async (data: ApiKeyFormValues) => {
     setIsSubmitting(true)
@@ -243,8 +267,137 @@ export function ApiKeysMutateDrawer({
   const quotaPlaceholder = tokensOnly
     ? t('Enter quota in tokens')
     : t('Enter quota in {{currency}}', { currency: currencyLabel })
-  const selectedGroup = form.watch('group')
+  const groupRoutes = form.watch('group_routes') || []
+  const selectedGroup = groupRoutes[0]?.group || form.watch('group')
   const unlimitedQuota = form.watch('unlimited_quota')
+  const selectedGroupSet = useMemo(
+    () => new Set(groupRoutes.map((route) => route.group)),
+    [groupRoutes]
+  )
+  const addableGroups = useMemo(
+    () => groups.filter((group) => !selectedGroupSet.has(group.value)),
+    [groups, selectedGroupSet]
+  )
+  const [pendingGroup, setPendingGroup] = useState('')
+  const [editingGroupRouteIndex, setEditingGroupRouteIndex] = useState<
+    number | null
+  >(null)
+  const groupEditorRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (addableGroups.length === 0) {
+      if (pendingGroup) setPendingGroup('')
+      return
+    }
+    if (
+      !pendingGroup ||
+      !addableGroups.some((group) => group.value === pendingGroup)
+    ) {
+      setPendingGroup(addableGroups[0]?.value || '')
+    }
+  }, [addableGroups, pendingGroup])
+
+  useEffect(() => {
+    if (groupRoutes.length === 0) {
+      setEditingGroupRouteIndex(null)
+      return
+    }
+    if (
+      editingGroupRouteIndex !== null &&
+      editingGroupRouteIndex >= groupRoutes.length
+    ) {
+      setEditingGroupRouteIndex(groupRoutes.length - 1)
+    }
+  }, [editingGroupRouteIndex, groupRoutes.length])
+
+  useEffect(() => {
+    if (!open) return
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (
+        target instanceof Node &&
+        groupEditorRef.current &&
+        !groupEditorRef.current.contains(target)
+      ) {
+        setEditingGroupRouteIndex(null)
+      }
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [open])
+
+  const setGroupRoutes = (routes: ApiKeyGroupRoute[]) => {
+    const normalized = routes.map((route, index) => ({
+      ...route,
+      group: route.group,
+      order: index + 1,
+    }))
+    form.setValue('group_routes', normalized, { shouldDirty: true })
+    form.setValue('group', normalized[0]?.group || '', { shouldDirty: true })
+  }
+
+  const addGroupRoute = () => {
+    if (!pendingGroup || selectedGroupSet.has(pendingGroup)) return
+    const nextRoutes = [
+      ...groupRoutes,
+      {
+        group: pendingGroup,
+        order: groupRoutes.length + 1,
+        failover_strategy: form.getValues('failover_strategy'),
+        timeout_seconds: form.getValues('timeout_seconds'),
+        cooldown_seconds: form.getValues('cooldown_seconds'),
+        recovery_strategy: form.getValues('recovery_strategy'),
+        failure_detection_strategy: form.getValues(
+          'failure_detection_strategy'
+        ),
+        failure_detection_ratio: form.getValues('failure_detection_ratio'),
+        recovery_detection_strategy: form.getValues(
+          'recovery_detection_strategy'
+        ),
+        recovery_detection_ratio: form.getValues('recovery_detection_ratio'),
+      },
+    ]
+    setGroupRoutes(nextRoutes)
+    setEditingGroupRouteIndex(nextRoutes.length - 1)
+  }
+
+  const updateGroupRoute = (
+    index: number,
+    updates: Partial<ApiKeyGroupRoute>
+  ) => {
+    const next = groupRoutes.map((route, routeIndex) =>
+      routeIndex === index ? { ...route, ...updates } : route
+    )
+    setGroupRoutes(next)
+  }
+
+  const updateGroupRouteOrder = (index: number, order: number) => {
+    const boundedOrder = Math.min(Math.max(order || 1, 1), groupRoutes.length)
+    const next = [...groupRoutes]
+    const [route] = next.splice(index, 1)
+    next.splice(boundedOrder - 1, 0, route)
+    setGroupRoutes(next)
+    setEditingGroupRouteIndex(boundedOrder - 1)
+  }
+
+  const moveGroupRoute = (index: number, direction: -1 | 1) => {
+    const nextIndex = index + direction
+    if (nextIndex < 0 || nextIndex >= groupRoutes.length) return
+    const next = [...groupRoutes]
+    const current = next[index]
+    next[index] = next[nextIndex]
+    next[nextIndex] = current
+    setGroupRoutes(next)
+  }
+
+  const removeGroupRoute = (index: number) => {
+    if (groupRoutes.length <= 1) return
+    if (editingGroupRouteIndex === index) setEditingGroupRouteIndex(null)
+    if (editingGroupRouteIndex !== null && editingGroupRouteIndex > index) {
+      setEditingGroupRouteIndex(editingGroupRouteIndex - 1)
+    }
+    setGroupRoutes(groupRoutes.filter((_, routeIndex) => routeIndex !== index))
+  }
 
   return (
     <Sheet
@@ -297,18 +450,434 @@ export function ApiKeysMutateDrawer({
 
               <FormField
                 control={form.control}
-                name='group'
-                render={({ field }) => (
+                name='group_routes'
+                render={() => (
                   <FormItem>
-                    <FormLabel>{t('Group')}</FormLabel>
+                    <FormLabel>{t('Groups')}</FormLabel>
                     <FormControl>
-                      <ApiKeyGroupCombobox
-                        options={groups}
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        placeholder={t('Select a group')}
-                      />
+                      <div ref={groupEditorRef} className='space-y-4'>
+                        <div className='space-y-2'>
+                          <div className='flex items-center justify-between gap-2'>
+                            <div className='text-sm font-medium'>
+                              {t('Selected groups')}
+                            </div>
+                            <div className='text-muted-foreground text-xs'>
+                              {t(
+                                'Click a group to edit its group and priority.'
+                              )}
+                            </div>
+                          </div>
+                          {groupRoutes.map((route, index) => {
+                            const option = groups.find(
+                              (group) => group.value === route.group
+                            )
+                            const routeOption =
+                              option ?? {
+                                value: route.group,
+                                label: route.group,
+                                desc: t('Current group'),
+                              }
+                            const editing = editingGroupRouteIndex === index
+                            const routeOptions = [
+                              ...addableGroups,
+                              routeOption,
+                            ].sort((a, b) => a.label.localeCompare(b.label))
+                            return (
+                              <div
+                                key={route.group}
+                                className={cn(
+                                  'border-border bg-muted/25 rounded-lg border p-2 transition-colors',
+                                  editing &&
+                                    'border-primary/50 bg-primary/5 ring-primary/15 ring-2'
+                                )}
+                                onClick={() => setEditingGroupRouteIndex(index)}
+                              >
+                                <div className='grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-2'>
+                                  <span className='text-muted-foreground text-center text-sm tabular-nums'>
+                                    {index + 1}
+                                  </span>
+                                  <div className='min-w-0'>
+                                    <div className='truncate text-sm font-medium'>
+                                      {routeOption.label}
+                                    </div>
+                                    {routeOption.desc && (
+                                      <div className='text-muted-foreground truncate text-xs'>
+                                        {routeOption.desc}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className='flex items-center gap-1'>
+                                    <Button
+                                      type='button'
+                                      variant='ghost'
+                                      size='icon'
+                                      className='size-8'
+                                      aria-label={t('Edit group route')}
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        setEditingGroupRouteIndex(index)
+                                      }}
+                                    >
+                                      <Pencil className='size-4' />
+                                    </Button>
+                                    <Button
+                                      type='button'
+                                      variant='ghost'
+                                      size='icon'
+                                      className='size-8'
+                                      aria-label={t('Move up')}
+                                      disabled={index === 0}
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        moveGroupRoute(index, -1)
+                                        setEditingGroupRouteIndex(index - 1)
+                                      }}
+                                    >
+                                      <ArrowUp className='size-4' />
+                                    </Button>
+                                    <Button
+                                      type='button'
+                                      variant='ghost'
+                                      size='icon'
+                                      className='size-8'
+                                      aria-label={t('Move down')}
+                                      disabled={
+                                        index === groupRoutes.length - 1
+                                      }
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        moveGroupRoute(index, 1)
+                                        setEditingGroupRouteIndex(index + 1)
+                                      }}
+                                    >
+                                      <ArrowDown className='size-4' />
+                                    </Button>
+                                    <Button
+                                      type='button'
+                                      variant='ghost'
+                                      size='icon'
+                                      className='text-destructive hover:text-destructive size-8'
+                                      aria-label={t('Remove')}
+                                      disabled={groupRoutes.length <= 1}
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        removeGroupRoute(index)
+                                      }}
+                                    >
+                                      <Trash2 className='size-4' />
+                                    </Button>
+                                  </div>
+                                </div>
+                                {editing && (
+                                  <div
+                                    className='border-border mt-3 space-y-3 border-t pt-3'
+                                    onClick={(event) => event.stopPropagation()}
+                                  >
+                                    <div className='text-xs font-medium'>
+                                      {t('Selected group settings')}
+                                    </div>
+                                    <div className='grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]'>
+                                      <div className='space-y-1.5'>
+                                        <FormLabel className='text-xs'>
+                                          {t('Group')}
+                                        </FormLabel>
+                                        <ApiKeyGroupCombobox
+                                          options={routeOptions}
+                                          value={route.group}
+                                          onValueChange={(value) => {
+                                            if (
+                                              value &&
+                                              value !== route.group &&
+                                              selectedGroupSet.has(value)
+                                            ) {
+                                              return
+                                            }
+                                            updateGroupRoute(index, {
+                                              group: value,
+                                            })
+                                          }}
+                                          placeholder={t('Select a group')}
+                                        />
+                                      </div>
+                                      <div className='space-y-1.5'>
+                                        <FormLabel className='text-xs'>
+                                          {t('Priority')}
+                                        </FormLabel>
+                                        <Input
+                                          type='number'
+                                          min='1'
+                                          max={groupRoutes.length}
+                                          value={index + 1}
+                                          onChange={(event) =>
+                                            updateGroupRouteOrder(
+                                              index,
+                                              parseInt(
+                                                event.target.value,
+                                                10
+                                              ) || 1
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                    </div>
+                                    <div className='grid gap-3 sm:grid-cols-2'>
+                                      <div className='space-y-1.5'>
+                                        <FormLabel className='text-xs'>
+                                          {t('Failure strategy')}
+                                        </FormLabel>
+                                        <NativeSelect
+                                          className='w-full'
+                                          value={
+                                            route.failover_strategy ||
+                                            'fallback'
+                                          }
+                                          onChange={(event) =>
+                                            updateGroupRoute(index, {
+                                              failover_strategy: event.target
+                                                .value as ApiKeyGroupRoute['failover_strategy'],
+                                            })
+                                          }
+                                        >
+                                          <NativeSelectOption value='fallback'>
+                                            {t('Switch silently')}
+                                          </NativeSelectOption>
+                                          <NativeSelectOption value='return_error'>
+                                            {t('Return error')}
+                                          </NativeSelectOption>
+                                        </NativeSelect>
+                                      </div>
+                                      <div className='space-y-1.5'>
+                                        <FormLabel className='text-xs'>
+                                          {t('Recovery strategy')}
+                                        </FormLabel>
+                                        <NativeSelect
+                                          className='w-full'
+                                          value={
+                                            route.recovery_strategy ||
+                                            'probe_then_switch'
+                                          }
+                                          onChange={(event) =>
+                                            updateGroupRoute(index, {
+                                              recovery_strategy: event.target
+                                                .value as ApiKeyGroupRoute['recovery_strategy'],
+                                            })
+                                          }
+                                        >
+                                          <NativeSelectOption value='probe_then_switch'>
+                                            {t('Prefer recovered group')}
+                                          </NativeSelectOption>
+                                          <NativeSelectOption value='sticky'>
+                                            {t('Keep current group')}
+                                          </NativeSelectOption>
+                                        </NativeSelect>
+                                      </div>
+                                      <div className='space-y-1.5'>
+                                        <FormLabel className='text-xs'>
+                                          {t('First response timeout')}
+                                        </FormLabel>
+                                        <Input
+                                          type='number'
+                                          min='0'
+                                          max='600'
+                                          value={route.timeout_seconds ?? 0}
+                                          onChange={(event) =>
+                                            updateGroupRoute(index, {
+                                              timeout_seconds:
+                                                parseInt(
+                                                  event.target.value,
+                                                  10
+                                                ) || 0,
+                                            })
+                                          }
+                                        />
+                                        <div className='text-muted-foreground text-xs'>
+                                          {t('Seconds, 0 disables')}
+                                        </div>
+                                      </div>
+                                      <div className='space-y-1.5'>
+                                        <FormLabel className='text-xs'>
+                                          {t('Pause after failure')}
+                                        </FormLabel>
+                                        <Input
+                                          type='number'
+                                          min='1'
+                                          max='86400'
+                                          value={
+                                            route.cooldown_seconds ?? 600
+                                          }
+                                          onChange={(event) =>
+                                            updateGroupRoute(index, {
+                                              cooldown_seconds:
+                                                parseInt(
+                                                  event.target.value,
+                                                  10
+                                                ) || 600,
+                                            })
+                                          }
+                                        />
+                                        <div className='text-muted-foreground text-xs'>
+                                          {t('Seconds')}
+                                        </div>
+                                      </div>
+                                      <div className='space-y-1.5'>
+                                        <FormLabel className='text-xs'>
+                                          {t('Failure detection strategy')}
+                                        </FormLabel>
+                                        <NativeSelect
+                                          className='w-full'
+                                          value={
+                                            route.failure_detection_strategy ||
+                                            'one'
+                                          }
+                                          onChange={(event) =>
+                                            updateGroupRoute(index, {
+                                              failure_detection_strategy:
+                                                event.target
+                                                  .value as ApiKeyGroupRoute['failure_detection_strategy'],
+                                            })
+                                          }
+                                        >
+                                          <NativeSelectOption value='one'>
+                                            {t('One failed channel')}
+                                          </NativeSelectOption>
+                                          <NativeSelectOption value='half'>
+                                            {t('More than half failed')}
+                                          </NativeSelectOption>
+                                          <NativeSelectOption value='all'>
+                                            {t('All channels failed')}
+                                          </NativeSelectOption>
+                                          <NativeSelectOption value='ratio'>
+                                            {t('Custom ratio')}
+                                          </NativeSelectOption>
+                                        </NativeSelect>
+                                      </div>
+                                      {(route.failure_detection_strategy ||
+                                        'one') === 'ratio' && (
+                                        <div className='space-y-1.5'>
+                                          <FormLabel className='text-xs'>
+                                            {t('Failure ratio')}
+                                          </FormLabel>
+                                          <Input
+                                            type='number'
+                                            min='0.01'
+                                            max='1'
+                                            step='0.01'
+                                            value={
+                                              route.failure_detection_ratio ??
+                                              0.5
+                                            }
+                                            onChange={(event) =>
+                                              updateGroupRoute(index, {
+                                                failure_detection_ratio:
+                                                  parseFloat(
+                                                    event.target.value
+                                                  ) || 0.5,
+                                              })
+                                            }
+                                          />
+                                        </div>
+                                      )}
+                                      <div className='space-y-1.5'>
+                                        <FormLabel className='text-xs'>
+                                          {t('Recovery detection strategy')}
+                                        </FormLabel>
+                                        <NativeSelect
+                                          className='w-full'
+                                          value={
+                                            route.recovery_detection_strategy ||
+                                            'one'
+                                          }
+                                          onChange={(event) =>
+                                            updateGroupRoute(index, {
+                                              recovery_detection_strategy:
+                                                event.target
+                                                  .value as ApiKeyGroupRoute['recovery_detection_strategy'],
+                                            })
+                                          }
+                                        >
+                                          <NativeSelectOption value='one'>
+                                            {t('One healthy channel')}
+                                          </NativeSelectOption>
+                                          <NativeSelectOption value='half'>
+                                            {t('At least half healthy')}
+                                          </NativeSelectOption>
+                                          <NativeSelectOption value='all'>
+                                            {t('All channels healthy')}
+                                          </NativeSelectOption>
+                                          <NativeSelectOption value='ratio'>
+                                            {t('Custom ratio')}
+                                          </NativeSelectOption>
+                                        </NativeSelect>
+                                      </div>
+                                      {(route.recovery_detection_strategy ||
+                                        'one') === 'ratio' && (
+                                        <div className='space-y-1.5'>
+                                          <FormLabel className='text-xs'>
+                                            {t('Recovery ratio')}
+                                          </FormLabel>
+                                          <Input
+                                            type='number'
+                                            min='0.01'
+                                            max='1'
+                                            step='0.01'
+                                            value={
+                                              route.recovery_detection_ratio ??
+                                              0.5
+                                            }
+                                            onChange={(event) =>
+                                              updateGroupRoute(index, {
+                                                recovery_detection_ratio:
+                                                  parseFloat(
+                                                    event.target.value
+                                                  ) || 0.5,
+                                              })
+                                            }
+                                          />
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                        <div
+                          className='border-border space-y-2 rounded-lg border border-dashed p-3'
+                          onPointerDown={() => setEditingGroupRouteIndex(null)}
+                        >
+                          <div className='text-sm font-medium'>
+                            {t('Add group')}
+                          </div>
+                          <div className='grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]'>
+                            <ApiKeyGroupCombobox
+                              options={addableGroups}
+                              value={pendingGroup}
+                              onValueChange={setPendingGroup}
+                              placeholder={t('Select a group')}
+                              disabled={addableGroups.length === 0}
+                            />
+                            <Button
+                              type='button'
+                              variant='outline'
+                              className='gap-2'
+                              disabled={
+                                !pendingGroup || addableGroups.length === 0
+                              }
+                              onClick={addGroupRoute}
+                            >
+                              <Plus className='size-4' />
+                              {t('Add')}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
                     </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Lower numbers are tried first. Failed groups pause before being tried again.'
+                      )}
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

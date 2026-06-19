@@ -380,8 +380,9 @@ func TokenAuth() func(c *gin.Context) {
 		userCache.WriteContext(c)
 
 		userGroup := userCache.Group
-		tokenGroup := token.Group
-		if tokenGroup != "" {
+		tokenGroupConfig := token.ParseGroupConfig()
+		for _, groupItem := range tokenGroupConfig.Groups {
+			tokenGroup := groupItem.Group
 			// check common.UserUsableGroups[userGroup]
 			if _, ok := service.GetUserUsableGroups(userGroup)[tokenGroup]; !ok {
 				abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("无权访问 %s 分组", tokenGroup))
@@ -394,9 +395,17 @@ func TokenAuth() func(c *gin.Context) {
 					return
 				}
 			}
+		}
+		tokenGroup := token.Group
+		if len(tokenGroupConfig.Groups) > 0 {
+			tokenGroup = tokenGroupConfig.Groups[0].Group
+		}
+		if tokenGroup != "" {
 			userGroup = tokenGroup
 		}
 		common.SetContextKey(c, constant.ContextKeyUsingGroup, userGroup)
+		common.SetContextKey(c, constant.ContextKeyTokenGroupConfig, tokenGroupConfig)
+		common.SetContextKey(c, constant.ContextKeyTokenGroupTimeout, tokenGroupConfig.TimeoutSeconds)
 
 		err = SetupContextForToken(c, token, parts...)
 		if err != nil {
@@ -426,6 +435,8 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 	}
 	common.SetContextKey(c, constant.ContextKeyTokenGroup, token.Group)
 	common.SetContextKey(c, constant.ContextKeyTokenCrossGroupRetry, token.CrossGroupRetry)
+	common.SetContextKey(c, constant.ContextKeyTokenGroupConfig, token.ParseGroupConfig())
+	common.SetContextKey(c, constant.ContextKeyTokenGroupTimeout, token.ParseGroupConfig().TimeoutSeconds)
 	if len(parts) > 1 {
 		if model.IsAdmin(token.UserId) {
 			c.Set("specific_channel_id", parts[1])

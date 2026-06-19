@@ -26,6 +26,10 @@ import type {
   GetMidjourneyLogsParams,
   GetTaskLogsParams,
   UserInfo,
+  CarnivalHistorySnapshot,
+  CarnivalStatusSnapshot,
+  CarpoolUsageSummarySnapshot,
+  UpstreamUsageSnapshot,
 } from './types'
 
 // ============================================================================
@@ -82,6 +86,86 @@ export const getLogStats = (params: GetLogStatsParams = {}) =>
 export const getUserLogStats = (
   params: Omit<GetLogStatsParams, 'username' | 'channel'> = {}
 ) => fetchLogStats('/api/log', params, false)
+
+export async function getUpstreamUsage(params: {
+  group?: string
+  refresh?: boolean
+}): Promise<{
+  success: boolean
+  message?: string
+  data?: UpstreamUsageSnapshot
+}> {
+  const queryParams = buildQueryParams({
+    group: params.group || '拼车',
+    refresh: params.refresh ? 1 : undefined,
+  })
+  const res = await api.get(`/api/log/upstream-usage?${queryParams}`)
+  return res.data
+}
+
+export async function getCarnivalStatus(params: { group?: string }): Promise<{
+  success: boolean
+  message?: string
+  data?: CarnivalStatusSnapshot
+}> {
+  const queryParams = buildQueryParams({
+    group: params.group || '拼车',
+  })
+  const res = await api.get(`/api/log/carnival?${queryParams}`)
+  return res.data
+}
+
+export async function getCarnivalHistory(params: {
+  group?: string
+  month?: string
+}): Promise<{
+  success: boolean
+  message?: string
+  data?: CarnivalHistorySnapshot
+}> {
+  const queryParams = buildQueryParams({
+    group: params.group || '拼车',
+    month: params.month || undefined,
+  })
+  const res = await api.get(`/api/log/carnival/history?${queryParams}`)
+  return res.data
+}
+
+export async function startCarnival(params: { group?: string }): Promise<{
+  success: boolean
+  message?: string
+  data?: CarnivalStatusSnapshot
+}> {
+  const queryParams = buildQueryParams({
+    group: params.group || '拼车',
+  })
+  const res = await api.post(`/api/log/carnival/start?${queryParams}`)
+  return res.data
+}
+
+export async function finishCarnival(params: { group?: string }): Promise<{
+  success: boolean
+  message?: string
+  data?: CarnivalStatusSnapshot
+}> {
+  const queryParams = buildQueryParams({
+    group: params.group || '拼车',
+  })
+  const res = await api.post(`/api/log/carnival/finish?${queryParams}`)
+  return res.data
+}
+
+export async function getCarpoolUsageSummary(params: {
+  group?: string
+  period?: 'week' | 'month'
+}): Promise<CarpoolUsageSummarySnapshot> {
+  const queryParams = buildQueryParams({
+    group: params.group || '拼车',
+    period: params.period || 'week',
+  })
+  const res = await api.get(`/api/carpool-usage/summary?${queryParams}`)
+  return res.data?.data || res.data
+}
 
 export async function getUserInfo(
   userId: number
