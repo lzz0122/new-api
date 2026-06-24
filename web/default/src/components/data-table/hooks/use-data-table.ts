@@ -55,7 +55,6 @@ type DataTableStateOptions = {
   sorting?: SortingState
   onSortingChange?: OnChangeFn<SortingState>
   initialColumnVisibility?: VisibilityState
-  columnVisibilityStorageKey?: string | false
   columnVisibility?: VisibilityState
   onColumnVisibilityChange?: OnChangeFn<VisibilityState>
   initialRowSelection?: RowSelectionState
@@ -123,32 +122,6 @@ function useControllableTableState<TValue>(
   return [value, setValue]
 }
 
-function readColumnVisibility(storageKey: string | undefined): VisibilityState {
-  if (!storageKey || typeof window === 'undefined') return {}
-
-  try {
-    const raw = window.localStorage.getItem(storageKey)
-    if (!raw) return {}
-
-    const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return {}
-    }
-
-    return Object.entries(parsed).reduce<VisibilityState>(
-      (visibility, [key, value]) => {
-        if (typeof value === 'boolean') {
-          visibility[key] = value
-        }
-        return visibility
-      },
-      {}
-    )
-  } catch {
-    return {}
-  }
-}
-
 export function useDataTable<TData>(options: UseDataTableOptions<TData>) {
   const {
     data,
@@ -171,18 +144,6 @@ export function useDataTable<TData>(options: UseDataTableOptions<TData>) {
     withExpandedRowModel = false,
   } = options
 
-  const columnVisibilityStorageKey =
-    typeof options.columnVisibilityStorageKey === 'string'
-      ? options.columnVisibilityStorageKey
-      : undefined
-  const resolvedInitialColumnVisibility = React.useMemo(
-    () => ({
-      ...initialColumnVisibility,
-      ...readColumnVisibility(columnVisibilityStorageKey),
-    }),
-    [columnVisibilityStorageKey, initialColumnVisibility]
-  )
-
   const [sorting, onSortingChange] = useControllableTableState(
     options.sorting,
     initialSorting,
@@ -191,13 +152,9 @@ export function useDataTable<TData>(options: UseDataTableOptions<TData>) {
   const [columnVisibility, onColumnVisibilityChange] =
     useControllableTableState(
       options.columnVisibility,
-      resolvedInitialColumnVisibility,
+      initialColumnVisibility,
       options.onColumnVisibilityChange
     )
-  const hydratedColumnVisibilityStorageKeyRef = React.useRef(
-    columnVisibilityStorageKey
-  )
-  const skipNextColumnVisibilityPersistRef = React.useRef(false)
   const [rowSelection, onRowSelectionChange] = useControllableTableState(
     options.rowSelection,
     initialRowSelection,
@@ -270,43 +227,6 @@ export function useDataTable<TData>(options: UseDataTableOptions<TData>) {
   React.useEffect(() => {
     ensurePageInRange?.(actualPageCount)
   }, [actualPageCount, ensurePageInRange])
-
-  React.useEffect(() => {
-    if (
-      options.columnVisibility !== undefined ||
-      columnVisibilityStorageKey ===
-        hydratedColumnVisibilityStorageKeyRef.current
-    ) {
-      return
-    }
-
-    hydratedColumnVisibilityStorageKeyRef.current = columnVisibilityStorageKey
-    skipNextColumnVisibilityPersistRef.current = true
-    onColumnVisibilityChange(() => resolvedInitialColumnVisibility)
-  }, [
-    columnVisibilityStorageKey,
-    onColumnVisibilityChange,
-    options.columnVisibility,
-    resolvedInitialColumnVisibility,
-  ])
-
-  React.useEffect(() => {
-    if (!columnVisibilityStorageKey || typeof window === 'undefined') return
-
-    if (skipNextColumnVisibilityPersistRef.current) {
-      skipNextColumnVisibilityPersistRef.current = false
-      return
-    }
-
-    try {
-      window.localStorage.setItem(
-        columnVisibilityStorageKey,
-        JSON.stringify(columnVisibility)
-      )
-    } catch {
-      // Storage can be unavailable in private mode; table controls still work.
-    }
-  }, [columnVisibility, columnVisibilityStorageKey])
 
   return {
     table,

@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import * as React from 'react'
-import { type Row, type Table as TanstackTable } from '@tanstack/react-table'
+import { type Row } from '@tanstack/react-table'
 import { cn } from '@/lib/utils'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import {
@@ -46,12 +46,8 @@ export { DataTableRow } from './data-table-row'
 
 export function DataTableView<TData>(props: DataTableViewProps<TData>) {
   const rows = props.rows ?? props.table.getRowModel().rows
-  const colSpan = React.useMemo(
-    () => props.table.getVisibleLeafColumns().length,
-    [props.table]
-  )
+  const colSpan = props.table.getVisibleLeafColumns().length
   const columnClassName = useResolvedColumnClassName(
-    props.table,
     props.getColumnClassName,
     props.pinnedColumns
   )
@@ -124,7 +120,31 @@ function SplitHeaderTableView<TData>({
   colSpan: number
   getColumnClassName: DataTableColumnClassName
 }) {
+  const headerHostRef = React.useRef<HTMLDivElement>(null)
+  const bodyHostRef = React.useRef<HTMLDivElement>(null)
   const tableSizing = getTableSizing(props)
+
+  React.useEffect(() => {
+    const headerScroller = headerHostRef.current?.querySelector<HTMLElement>(
+      '[data-slot=table-container]'
+    )
+    const bodyScroller = bodyHostRef.current?.querySelector<HTMLElement>(
+      '[data-slot=table-container]'
+    )
+
+    if (!headerScroller || !bodyScroller) return
+
+    const syncHeaderScroll = () => {
+      headerScroller.scrollLeft = bodyScroller.scrollLeft
+    }
+
+    syncHeaderScroll()
+    bodyScroller.addEventListener('scroll', syncHeaderScroll, { passive: true })
+
+    return () => {
+      bodyScroller.removeEventListener('scroll', syncHeaderScroll)
+    }
+  }, [rows.length, props.tableClassName, props.colgroup])
 
   return (
     <div
@@ -135,49 +155,49 @@ function SplitHeaderTableView<TData>({
     >
       <div
         className={cn(
-          'min-h-0 flex-1 overflow-auto',
-          '**:data-[slot=table-header]:[--table-header-bg:color-mix(in_oklch,var(--muted)_30%,var(--background))]',
-          '**:data-[slot=table-header]:bg-(--table-header-bg)',
-          props.splitHeaderScrollClassName,
-          props.bodyContainerClassName
+          'flex min-h-0 flex-1 flex-col overflow-hidden',
+          props.splitHeaderScrollClassName
         )}
       >
-        <table
-          data-slot='table'
-          className={cn(
-            'w-full caption-bottom text-sm tabular-nums [&_td]:text-sm [&_td_*]:text-sm [&_th]:text-sm [&_th_*]:text-sm',
-            props.tableClassName
-          )}
-          style={tableSizing.style}
+        <div
+          ref={headerHostRef}
+          className='[scrollbar-gutter:stable] overflow-hidden [&_[data-slot=table-container]]:overflow-x-hidden'
         >
-          {tableSizing.colgroup}
-          <DataTableHeader
-            table={props.table}
-            applyHeaderSize={props.applyHeaderSize}
-            className={cn('sticky top-0 z-10', props.tableHeaderClassName)}
-            rowClassName={props.tableHeaderRowClassName}
-            getColumnClassName={getColumnClassName}
-          />
-          {renderTableBody(props, rows, colSpan, getColumnClassName)}
-        </table>
+          <Table className={props.tableClassName} style={tableSizing.style}>
+            {tableSizing.colgroup}
+            <DataTableHeader
+              table={props.table}
+              applyHeaderSize={props.applyHeaderSize}
+              className={props.tableHeaderClassName}
+              rowClassName={props.tableHeaderRowClassName}
+              getColumnClassName={getColumnClassName}
+            />
+          </Table>
+        </div>
+        <div
+          ref={bodyHostRef}
+          className={cn(
+            'min-h-0 flex-1 [scrollbar-gutter:stable] overflow-y-auto',
+            props.bodyContainerClassName
+          )}
+        >
+          <Table className={props.tableClassName} style={tableSizing.style}>
+            {tableSizing.colgroup}
+            {renderTableBody(props, rows, colSpan, getColumnClassName)}
+          </Table>
+        </div>
       </div>
     </div>
   )
 }
 
-function useResolvedColumnClassName<TData>(
-  table: TanstackTable<TData>,
+function useResolvedColumnClassName(
   getColumnClassName?: DataTableColumnClassName,
   pinnedColumns?: DataTablePinnedColumn[]
 ) {
-  const allPinnedColumns = React.useMemo(() => {
-    const metaPinnedColumns = getMetaPinnedColumns(table)
-    return mergePinnedColumns(pinnedColumns, metaPinnedColumns)
-  }, [table, pinnedColumns])
-
   const pinnedColumnById = React.useMemo(
-    () => getPinnedColumnMap(allPinnedColumns),
-    [allPinnedColumns]
+    () => getPinnedColumnMap(pinnedColumns),
+    [pinnedColumns]
   )
 
   return React.useMemo(
@@ -185,41 +205,6 @@ function useResolvedColumnClassName<TData>(
       getResolvedColumnClassNameFromMap(getColumnClassName, pinnedColumnById),
     [getColumnClassName, pinnedColumnById]
   )
-}
-
-function getMetaPinnedColumns<TData>(
-  table: TanstackTable<TData>
-): DataTablePinnedColumn[] {
-  return table.getAllColumns().flatMap((column) => {
-    const side = column.columnDef.meta?.pinned
-    if (!side) return []
-
-    return [{ columnId: column.id, side }]
-  })
-}
-
-function mergePinnedColumns(
-  explicitPinnedColumns: DataTablePinnedColumn[] | undefined,
-  metaPinnedColumns: DataTablePinnedColumn[]
-): DataTablePinnedColumn[] | undefined {
-  if (!metaPinnedColumns.length) {
-    return explicitPinnedColumns
-  }
-
-  if (!explicitPinnedColumns?.length) {
-    return metaPinnedColumns
-  }
-
-  const explicitColumnIds = new Set(
-    explicitPinnedColumns.map((column) => column.columnId)
-  )
-
-  return [
-    ...explicitPinnedColumns,
-    ...metaPinnedColumns.filter(
-      (column) => !explicitColumnIds.has(column.columnId)
-    ),
-  ]
 }
 
 function getTableSizing<TData>(props: DataTableViewProps<TData>): {
@@ -320,7 +305,6 @@ function renderDefaultRow<TData>(
       row={row}
       className={cn(props.tableBodyRowClassName, props.getRowClassName?.(row))}
       getColumnClassName={getColumnClassName}
-      cellRenderColumns={props.table.options.columns}
     />
   )
 }

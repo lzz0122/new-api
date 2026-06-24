@@ -39,9 +39,7 @@ const BRAND_AND_LITERAL_KEYS = new Set([
   'AccessKey / SecretAccessKey',
   'AZURE_OPENAI_ENDPOINT *',
   'Baidu V2',
-  'CC Switch',
   'ChatGPT',
-  'ChatGPT Subscription (Codex)',
   'Claude',
   'Client ID',
   'Client Secret',
@@ -309,12 +307,11 @@ async function main() {
   }
 
   await fs.writeFile(path.join(reportsDir, '_sync-report.json'), stableStringify(report), 'utf8')
-   
+
   console.log(`i18n sync done. Report: ${path.join(reportsDir, '_sync-report.json')}`)
 }
 
 main().catch((err) => {
-   
   console.error(err)
   process.exitCode = 1
 })

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
@@ -62,7 +62,7 @@ import {
   sideDrawerFormClassName,
   sideDrawerHeaderClassName,
 } from '@/components/drawer-layout'
-import { createUser, updateUser, getUser, getGroups } from '../api'
+import { createUser, updateUser, getUser, getUserGroupOptions } from '../api'
 import { BINDING_FIELDS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import {
   userFormSchema,
@@ -92,19 +92,26 @@ export function UsersMutateDrawer({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [quotaDialogOpen, setQuotaDialogOpen] = useState(false)
 
-  // Fetch groups
+  // Fetch user groups. Pricing/channel groups are intentionally separate.
   const { data: groupsData } = useQuery({
-    queryKey: ['groups'],
-    queryFn: getGroups,
+    queryKey: ['user-group-options'],
+    queryFn: getUserGroupOptions,
     staleTime: 5 * 60 * 1000,
   })
-
-  const groups = groupsData?.data || []
 
   const form = useForm<UserFormValues>({
     resolver: zodResolver(userFormSchema),
     defaultValues: USER_FORM_DEFAULT_VALUES,
   })
+
+  const selectedGroup = form.watch('group') || currentRow?.group || ''
+  const groups = useMemo(() => {
+    const groupSet = new Set(groupsData?.data || [])
+    if (selectedGroup) {
+      groupSet.add(selectedGroup)
+    }
+    return Array.from(groupSet)
+  }, [groupsData?.data, selectedGroup])
 
   // Load existing data when updating
   useEffect(() => {

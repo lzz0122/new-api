@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
@@ -56,6 +57,13 @@ export function ComboboxInput({
   const containerRef = React.useRef<HTMLDivElement>(null)
   const inputRef = React.useRef<HTMLInputElement>(null)
   const listRef = React.useRef<HTMLUListElement>(null)
+  const dropdownRef = React.useRef<HTMLDivElement>(null)
+  const [dropdownPosition, setDropdownPosition] = React.useState({
+    left: 0,
+    top: 0,
+    width: 0,
+    maxHeight: 200,
+  })
   const selectedOption = React.useMemo(
     () => options.find((option) => option.value === value),
     [options, value]
@@ -82,9 +90,11 @@ export function ComboboxInput({
     if (!open) return
 
     const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node
       if (
         containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
+        !containerRef.current.contains(target) &&
+        !dropdownRef.current?.contains(target)
       ) {
         setOpen(false)
         setSearchValue('')
@@ -94,6 +104,33 @@ export function ComboboxInput({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [open])
+
+  React.useEffect(() => {
+    if (!open) return
+
+    const updateDropdownPosition = () => {
+      const rect = inputRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const viewportHeight =
+        window.visualViewport?.height ?? window.innerHeight
+      const availableBelow = Math.max(viewportHeight - rect.bottom - 12, 120)
+      setDropdownPosition({
+        left: rect.left,
+        top: rect.bottom + 4,
+        width: rect.width,
+        maxHeight: Math.min(200, availableBelow),
+      })
+    }
+
+    updateDropdownPosition()
+    window.addEventListener('resize', updateDropdownPosition)
+    window.addEventListener('scroll', updateDropdownPosition, true)
+
+    return () => {
+      window.removeEventListener('resize', updateDropdownPosition)
+      window.removeEventListener('scroll', updateDropdownPosition, true)
+    }
+  }, [open, filteredOptions.length])
 
   const handleSelect = (selectedValue: string) => {
     onValueChange(selectedValue)
@@ -154,6 +191,71 @@ export function ComboboxInput({
     open &&
     (filteredOptions.length > 0 || (allowCustomValue && searchValue.trim()))
 
+  const dropdown =
+    showDropdown && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            ref={dropdownRef}
+            className='bg-popover text-popover-foreground fixed z-[1000] rounded-md border shadow-md'
+            style={{
+              left: dropdownPosition.left,
+              top: dropdownPosition.top,
+              width: dropdownPosition.width,
+            }}
+          >
+            {filteredOptions.length > 0 ? (
+              <ul
+                ref={listRef}
+                role='listbox'
+                className='overflow-y-auto p-1'
+                style={{ maxHeight: dropdownPosition.maxHeight }}
+              >
+                {filteredOptions.map((option, index) => (
+                  <li
+                    key={option.value}
+                    role='option'
+                    aria-selected={value === option.value}
+                    data-highlighted={index === highlightedIndex}
+                    className={cn(
+                      'relative flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm select-none',
+                      index === highlightedIndex &&
+                        'bg-accent text-accent-foreground',
+                      value === option.value && 'font-medium'
+                    )}
+                    onMouseEnter={() => setHighlightedIndex(index)}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      handleSelect(option.value)
+                    }}
+                  >
+                    <Check
+                      className={cn(
+                        'size-4 shrink-0',
+                        value === option.value ? 'opacity-100' : 'opacity-0'
+                      )}
+                    />
+                    {option.icon && <span>{option.icon}</span>}
+                    <span className='truncate'>{option.label}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className='px-2 py-6 text-center text-sm'>
+                {t(emptyText)}
+                {allowCustomValue && searchValue.trim() && (
+                  <div className='text-muted-foreground mt-1 text-xs'>
+                    {t('Press Enter to use "{{value}}"', {
+                      value: searchValue.trim(),
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>,
+          document.body
+        )
+      : null
+
   return (
     <div ref={containerRef} className='relative'>
       <Input
@@ -183,58 +285,7 @@ export function ComboboxInput({
         className={cn('pr-9', className)}
       />
       <ChevronsUpDown className='pointer-events-none absolute top-1/2 right-3 size-4 shrink-0 -translate-y-1/2 opacity-50' />
-
-      {showDropdown && (
-        <div className='bg-popover text-popover-foreground absolute top-full z-100 mt-1 w-full rounded-md border shadow-md'>
-          {filteredOptions.length > 0 ? (
-            <ul
-              ref={listRef}
-              role='listbox'
-              className='max-h-[200px] overflow-y-auto p-1'
-            >
-              {filteredOptions.map((option, index) => (
-                <li
-                  key={option.value}
-                  role='option'
-                  aria-selected={value === option.value}
-                  data-highlighted={index === highlightedIndex}
-                  className={cn(
-                    'relative flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm select-none',
-                    index === highlightedIndex &&
-                      'bg-accent text-accent-foreground',
-                    value === option.value && 'font-medium'
-                  )}
-                  onMouseEnter={() => setHighlightedIndex(index)}
-                  onMouseDown={(e) => {
-                    e.preventDefault() // Prevent blur
-                    handleSelect(option.value)
-                  }}
-                >
-                  <Check
-                    className={cn(
-                      'size-4 shrink-0',
-                      value === option.value ? 'opacity-100' : 'opacity-0'
-                    )}
-                  />
-                  {option.icon && <span>{option.icon}</span>}
-                  <span className='truncate'>{option.label}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className='px-2 py-6 text-center text-sm'>
-              {t(emptyText)}
-              {allowCustomValue && searchValue.trim() && (
-                <div className='text-muted-foreground mt-1 text-xs'>
-                  {t('Press Enter to use "{{value}}"', {
-                    value: searchValue.trim(),
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+      {dropdown}
     </div>
   )
 }

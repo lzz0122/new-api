@@ -52,6 +52,7 @@ type Log struct {
 	Ip                string `json:"ip" gorm:"index;default:''"`
 	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
 	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
+	CarnivalSessionID int    `json:"carnival_session_id,omitempty" gorm:"index;default:0"`
 	Other             string `json:"other"`
 }
 
@@ -64,7 +65,6 @@ const (
 	LogTypeSystem  = 4
 	LogTypeError   = 5
 	LogTypeRefund  = 6
-	LogTypeLogin   = 7
 )
 
 func formatUserLogs(logs []*Log, startIdx int) {
@@ -75,8 +75,6 @@ func formatUserLogs(logs []*Log, startIdx int) {
 		if otherMap != nil {
 			// Remove admin-only debug fields.
 			delete(otherMap, "admin_info")
-			// Remove operation-audit details (operator/route info), admin-only.
-			delete(otherMap, "audit_info")
 			// delete(otherMap, "reject_reason")
 			delete(otherMap, "stream_status")
 		}
@@ -130,74 +128,6 @@ func RecordLogWithAdminInfo(userId int, logType int, content string, adminInfo m
 	}
 	if err := LOG_DB.Create(log).Error; err != nil {
 		common.SysLog("failed to record log: " + err.Error())
-	}
-}
-
-// buildOpField 构建语言无关的操作描述（写入 Other.op）。
-// 前端依据 action(稳定操作标识) + params(结构化参数) 在渲染期用 i18n 本地化展示，
-// 因此不在数据库中存储自然语言句子。
-func buildOpField(action string, params map[string]interface{}) map[string]interface{} {
-	op := map[string]interface{}{
-		"action": action,
-	}
-	if len(params) > 0 {
-		op["params"] = params
-	}
-	return op
-}
-
-// RecordLoginLog 记录用户登录成功的审计日志（type=LogTypeLogin）。
-// username 由调用方传入（登录流程已持有用户对象），避免额外的数据库查询。
-// content 为英文兜底文本（用于导出/经典前端）；action+params 供前端本地化渲染。
-// extra 可携带 login_method、user_agent 等附加信息（普通用户可见）。
-func RecordLoginLog(userId int, username string, content string, ip string, action string, params map[string]interface{}, extra map[string]interface{}) {
-	other := map[string]interface{}{}
-	for k, v := range extra {
-		other[k] = v
-	}
-	other["op"] = buildOpField(action, params)
-	log := &Log{
-		UserId:    userId,
-		Username:  username,
-		CreatedAt: common.GetTimestamp(),
-		Type:      LogTypeLogin,
-		Content:   content,
-		Ip:        ip,
-		Other:     common.MapToJsonStr(other),
-	}
-	if err := LOG_DB.Create(log).Error; err != nil {
-		common.SysLog("failed to record login log: " + err.Error())
-	}
-}
-
-// RecordOperationAuditLog 记录管理/高危操作审计日志（type=LogTypeManage）。
-// logUserId 为日志归属者（面向用户的操作如额度调整归属目标用户，资源类操作如渠道/系统设置归属操作者），
-// username 内部按 logUserId 查询。content 为英文兜底文本（导出/经典前端用）。
-// action+params 写入 Other.op，供前端本地化渲染（普通用户可见，不含敏感信息）。
-// adminInfo 存放操作者身份（写入 Other.admin_info，普通用户查询时剥离）；
-// auditInfo 存放路由/方法/结果等中间件兜底信息（写入 Other.audit_info，普通用户查询时剥离）。
-func RecordOperationAuditLog(logUserId int, content string, ip string, action string, params map[string]interface{}, adminInfo map[string]interface{}, auditInfo map[string]interface{}) {
-	username, _ := GetUsernameById(logUserId, false)
-	other := map[string]interface{}{
-		"op": buildOpField(action, params),
-	}
-	if len(adminInfo) > 0 {
-		other["admin_info"] = adminInfo
-	}
-	if len(auditInfo) > 0 {
-		other["audit_info"] = auditInfo
-	}
-	log := &Log{
-		UserId:    logUserId,
-		Username:  username,
-		CreatedAt: common.GetTimestamp(),
-		Type:      LogTypeManage,
-		Content:   content,
-		Ip:        ip,
-		Other:     common.MapToJsonStr(other),
-	}
-	if err := LOG_DB.Create(log).Error; err != nil {
-		common.SysLog("failed to record operation audit log: " + err.Error())
 	}
 }
 
@@ -298,6 +228,21 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
+	createdAt := common.GetTimestamp()
+	carnivalSessionID := 0
+	if params.Quota > 0 && strings.TrimSpace(params.Group) != "" {
+		session, err := GetActiveCarnivalSession(params.Group)
+		if err != nil {
+			logger.LogError(c, "failed to get active carnival session: "+err.Error())
+		} else if session != nil {
+			carnivalSessionID = session.Id
+			if params.Other == nil {
+				params.Other = map[string]interface{}{}
+			}
+			params.Other["carnival_session_id"] = session.Id
+			params.Other["carnival_started_at"] = session.StartedAt
+		}
+	}
 	otherStr := common.MapToJsonStr(params.Other)
 	// 判断是否需要记录 IP
 	needRecordIp := false
@@ -309,7 +254,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	log := &Log{
 		UserId:           userId,
 		Username:         username,
-		CreatedAt:        common.GetTimestamp(),
+		CreatedAt:        createdAt,
 		Type:             LogTypeConsume,
 		Content:          params.Content,
 		PromptTokens:     params.PromptTokens,
@@ -330,15 +275,49 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		}(),
 		RequestId:         requestId,
 		UpstreamRequestId: upstreamRequestId,
+		CarnivalSessionID: carnivalSessionID,
 		Other:             otherStr,
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
 	}
-	if common.DataExportEnabled {
+	if err == nil && carnivalSessionID > 0 {
+		if err := RecordCarnivalUsage(CarnivalUsageParams{
+			SessionID:        carnivalSessionID,
+			Group:            params.Group,
+			LogID:            log.Id,
+			UserID:           userId,
+			Username:         username,
+			ModelName:        params.ModelName,
+			TokenID:          params.TokenId,
+			TokenName:        params.TokenName,
+			ChannelID:        params.ChannelId,
+			Quota:            params.Quota,
+			PromptTokens:     params.PromptTokens,
+			CompletionTokens: params.CompletionTokens,
+		}); err != nil {
+			logger.LogError(c, "failed to record carnival usage: "+err.Error())
+		}
+	}
+	if err == nil && carnivalSessionID == 0 {
+		if err := RecordCarpoolUsageDailySnapshot(CarpoolUsageDailySnapshotParams{
+			Group:        params.Group,
+			UserID:       userId,
+			Username:     username,
+			TokenID:      params.TokenId,
+			TokenName:    params.TokenName,
+			Quota:        params.Quota,
+			TokenUsed:    params.PromptTokens + params.CompletionTokens,
+			CreatedAt:    createdAt,
+			RequestCount: 1,
+		}); err != nil {
+			logger.LogError(c, "failed to record carpool usage daily snapshot: "+err.Error())
+		}
+	}
+	if common.DataExportEnabled && carnivalSessionID == 0 {
 		gopool.Go(func() {
-			LogQuotaData(userId, username, params.ModelName, params.Quota, common.GetTimestamp(), params.PromptTokens+params.CompletionTokens)
+			LogQuotaData(userId, username, params.ModelName, params.Quota, createdAt, params.PromptTokens+params.CompletionTokens)
 		})
 	}
 }
@@ -360,29 +339,75 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		return
 	}
 	username, _ := GetUsernameById(params.UserId, false)
+	carnivalSessionID := 0
+	if params.LogType == LogTypeConsume && params.Quota > 0 && strings.TrimSpace(params.Group) != "" {
+		session, err := GetActiveCarnivalSession(params.Group)
+		if err != nil {
+			common.SysLog("failed to get active carnival session: " + err.Error())
+		} else if session != nil {
+			carnivalSessionID = session.Id
+			if params.Other == nil {
+				params.Other = map[string]interface{}{}
+			}
+			params.Other["carnival_session_id"] = session.Id
+			params.Other["carnival_started_at"] = session.StartedAt
+		}
+	}
 	tokenName := ""
 	if params.TokenId > 0 {
 		if token, err := GetTokenById(params.TokenId); err == nil {
 			tokenName = token.Name
 		}
 	}
+	createdAt := common.GetTimestamp()
 	log := &Log{
-		UserId:    params.UserId,
-		Username:  username,
-		CreatedAt: common.GetTimestamp(),
-		Type:      params.LogType,
-		Content:   params.Content,
-		TokenName: tokenName,
-		ModelName: params.ModelName,
-		Quota:     params.Quota,
-		ChannelId: params.ChannelId,
-		TokenId:   params.TokenId,
-		Group:     params.Group,
-		Other:     common.MapToJsonStr(params.Other),
+		UserId:            params.UserId,
+		Username:          username,
+		CreatedAt:         createdAt,
+		Type:              params.LogType,
+		Content:           params.Content,
+		TokenName:         tokenName,
+		ModelName:         params.ModelName,
+		Quota:             params.Quota,
+		ChannelId:         params.ChannelId,
+		TokenId:           params.TokenId,
+		Group:             params.Group,
+		CarnivalSessionID: carnivalSessionID,
+		Other:             common.MapToJsonStr(params.Other),
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
 		common.SysLog("failed to record task billing log: " + err.Error())
+	}
+	if err == nil && carnivalSessionID > 0 {
+		if err := RecordCarnivalUsage(CarnivalUsageParams{
+			SessionID: carnivalSessionID,
+			Group:     params.Group,
+			LogID:     log.Id,
+			UserID:    params.UserId,
+			Username:  username,
+			ModelName: params.ModelName,
+			TokenID:   params.TokenId,
+			TokenName: tokenName,
+			ChannelID: params.ChannelId,
+			Quota:     params.Quota,
+		}); err != nil {
+			common.SysLog("failed to record carnival usage: " + err.Error())
+		}
+	}
+	if err == nil && params.LogType == LogTypeConsume && carnivalSessionID == 0 {
+		if err := RecordCarpoolUsageDailySnapshot(CarpoolUsageDailySnapshotParams{
+			Group:        params.Group,
+			UserID:       params.UserId,
+			Username:     username,
+			TokenID:      params.TokenId,
+			TokenName:    tokenName,
+			Quota:        params.Quota,
+			CreatedAt:    createdAt,
+			RequestCount: 1,
+		}); err != nil {
+			common.SysLog("failed to record carpool usage daily snapshot: " + err.Error())
+		}
 	}
 }
 
@@ -527,9 +552,11 @@ type Stat struct {
 
 func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
 	tx := LOG_DB.Table("logs").Select("sum(quota) quota")
+	tx = tx.Where("(carnival_session_id IS NULL OR carnival_session_id = 0)")
 
 	// 为rpm和tpm创建单独的查询
 	rpmTpmQuery := LOG_DB.Table("logs").Select("count(*) rpm, sum(prompt_tokens) + sum(completion_tokens) tpm")
+	rpmTpmQuery = rpmTpmQuery.Where("(carnival_session_id IS NULL OR carnival_session_id = 0)")
 
 	if tx, err = applyExplicitLogTextFilter(tx, "username", username); err != nil {
 		return stat, err

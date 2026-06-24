@@ -26,7 +26,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { TruncatedCell } from '../core/truncated-cell'
 import { staticDataTableClassNames } from './static-data-table-classnames'
 
 type StaticDataTableBaseProps = {
@@ -164,45 +163,13 @@ function StaticDataTableRow<TData>({
       {columns.map((column) => (
         <TableCell
           key={column.id}
-          className={cn(
-            'max-w-full min-w-0 overflow-hidden',
-            getStaticCellClassName(column, row, index)
-          )}
+          className={getStaticCellClassName(column, row, index)}
         >
-          {renderStaticCellContent(column, row, index)}
+          {column.cell?.(row, index)}
         </TableCell>
       ))}
     </TableRow>
   )
-}
-
-function renderStaticCellContent<TData>(
-  column: StaticDataTableColumn<TData>,
-  row: TData,
-  index: number
-) {
-  const content = column.cell?.(row, index)
-  const textContent = getPrimitiveTextContent(content)
-
-  if (!textContent) return content
-
-  return <TruncatedCell tooltipContent={textContent}>{content}</TruncatedCell>
-}
-
-function getPrimitiveTextContent(content: React.ReactNode): string | null {
-  if (typeof content === 'string' || typeof content === 'number') {
-    return String(content)
-  }
-
-  if (
-    React.isValidElement<{ children?: React.ReactNode }>(content) &&
-    (typeof content.props.children === 'string' ||
-      typeof content.props.children === 'number')
-  ) {
-    return String(content.props.children)
-  }
-
-  return null
 }
 
 function getStaticCellClassName<TData>(

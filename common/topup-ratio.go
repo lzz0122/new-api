@@ -22,6 +22,17 @@ func TopupGroupRatio2JSONString() string {
 	return string(jsonBytes)
 }
 
+func GetTopupGroupRatioCopy() map[string]float64 {
+	topupGroupRatioMutex.RLock()
+	defer topupGroupRatioMutex.RUnlock()
+
+	copyTopupGroupRatio := make(map[string]float64, len(topupGroupRatio))
+	for k, v := range topupGroupRatio {
+		copyTopupGroupRatio[k] = v
+	}
+	return copyTopupGroupRatio
+}
+
 func UpdateTopupGroupRatioByJSONString(jsonStr string) error {
 	topupGroupRatioMutex.Lock()
 	defer topupGroupRatioMutex.Unlock()

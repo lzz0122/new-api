@@ -156,7 +156,6 @@ export function UsersTable() {
     onGlobalFilterChange,
     onColumnFiltersChange,
     manualPagination: true,
-    manualFiltering: true,
     totalCount: data?.total || 0,
     ensurePageInRange,
   })

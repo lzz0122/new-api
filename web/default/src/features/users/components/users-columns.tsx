@@ -27,17 +27,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { BadgeCell } from '@/components/data-table'
+import { DataTableColumnHeader } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
 import { LongText } from '@/components/long-text'
 import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
-import {
-  USER_STATUS,
-  USER_STATUSES,
-  USER_ROLES,
-  isUserDeleted,
-} from '../constants'
+import { USER_STATUSES, USER_ROLES, isUserDeleted } from '../constants'
 import { type User } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
 
@@ -72,21 +67,26 @@ export function useUsersColumns(): ColumnDef<User>[] {
       enableSorting: false,
       enableHiding: false,
       size: 40,
+      meta: { label: t('Select') },
     },
     {
       accessorKey: 'id',
-      header: t('ID'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title='ID' />
+      ),
       cell: ({ row }) => {
         return (
           <TableId value={row.getValue('id') as number} className='w-[60px]' />
         )
       },
       size: 80,
-      meta: { mobileHidden: true },
+      meta: { label: t('ID'), mobileHidden: true },
     },
     {
       accessorKey: 'username',
-      header: t('Username'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Username')} />
+      ),
       cell: ({ row }) => {
         const username = row.getValue('username') as string
         const displayName = row.original.display_name
@@ -121,17 +121,19 @@ export function useUsersColumns(): ColumnDef<User>[] {
       },
       enableHiding: false,
       size: 220,
-      meta: { mobileTitle: true },
+      meta: { label: t('Username'), mobileTitle: true },
     },
     {
       accessorKey: 'status',
-      header: t('Status'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Status')} />
+      ),
       cell: ({ row }) => {
         const user = row.original
         const requestCount = user.request_count
 
         const statusConfig = isUserDeleted(user)
-          ? USER_STATUSES[USER_STATUS.DELETED]
+          ? USER_STATUSES.DELETED
           : USER_STATUSES[user.status as keyof typeof USER_STATUSES]
 
         if (!statusConfig) {
@@ -140,7 +142,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
 
         return (
           <Tooltip>
-            <TooltipTrigger render={<div className='-ml-1.5 cursor-help' />}>
+            <TooltipTrigger render={<div className='cursor-help' />}>
               <StatusBadge
                 label={t(statusConfig.labelKey)}
                 variant={statusConfig.variant}
@@ -160,12 +162,14 @@ export function useUsersColumns(): ColumnDef<User>[] {
       },
       enableSorting: false,
       size: 120,
-      meta: { mobileBadge: true },
+      meta: { label: t('Status'), mobileBadge: true },
     },
     {
       id: 'quota',
       accessorKey: 'quota',
-      header: t('Quota'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Quota')} />
+      ),
       cell: ({ row }) => {
         const user = row.original
         const used = user.used_quota
@@ -179,7 +183,6 @@ export function useUsersColumns(): ColumnDef<User>[] {
               label={t('No Quota')}
               variant='neutral'
               copyable={false}
-              className='-ml-1.5'
             />
           )
         }
@@ -222,17 +225,16 @@ export function useUsersColumns(): ColumnDef<User>[] {
         )
       },
       size: 170,
+      meta: { label: t('Quota') },
     },
     {
       accessorKey: 'group',
-      header: t('Group'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Group')} />
+      ),
       cell: ({ row }) => {
         const group = row.getValue('group') as string
-        return (
-          <BadgeCell>
-            <GroupBadge group={group} />
-          </BadgeCell>
-        )
+        return <GroupBadge group={group} />
       },
       filterFn: (row, id, value) => {
         const group = String(row.getValue(id) || t('User Group')).toLowerCase()
@@ -240,10 +242,13 @@ export function useUsersColumns(): ColumnDef<User>[] {
         return group.includes(searchValue)
       },
       size: 140,
+      meta: { label: t('Group') },
     },
     {
       accessorKey: 'role',
-      header: t('Role'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Role')} />
+      ),
       cell: ({ row }) => {
         const roleValue = row.getValue('role') as number
         const roleConfig = USER_ROLES[roleValue as keyof typeof USER_ROLES]
@@ -266,10 +271,13 @@ export function useUsersColumns(): ColumnDef<User>[] {
       },
       enableSorting: false,
       size: 120,
+      meta: { label: t('Role') },
     },
     {
       id: 'invite_info',
-      header: t('Invite Info'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Invite Info')} />
+      ),
       cell: ({ row }) => {
         const user = row.original
         const affCount = user.aff_count || 0
@@ -277,7 +285,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
         const inviterId = user.inviter_id || 0
 
         return (
-          <div className='flex max-w-full min-w-0 flex-wrap items-center gap-1 overflow-hidden'>
+          <div className='flex min-w-[220px] flex-wrap items-center gap-1'>
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -339,11 +347,13 @@ export function useUsersColumns(): ColumnDef<User>[] {
       },
       size: 240,
       enableSorting: false,
-      meta: { mobileHidden: true },
+      meta: { label: t('Invite Info'), mobileHidden: true },
     },
     {
       accessorKey: 'created_at',
-      header: t('Created At'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Created At')} />
+      ),
       cell: ({ row }) => {
         const ts = row.getValue('created_at') as number | undefined
         return (
@@ -353,11 +363,13 @@ export function useUsersColumns(): ColumnDef<User>[] {
         )
       },
       size: 180,
-      meta: { mobileHidden: true },
+      meta: { label: t('Created At'), mobileHidden: true },
     },
     {
       accessorKey: 'last_login_at',
-      header: t('Last Login'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Last Login')} />
+      ),
       cell: ({ row }) => {
         const ts = row.getValue('last_login_at') as number | undefined
         return (
@@ -367,13 +379,12 @@ export function useUsersColumns(): ColumnDef<User>[] {
         )
       },
       size: 180,
-      meta: { mobileHidden: true },
+      meta: { label: t('Last Login'), mobileHidden: true },
     },
     {
       id: 'actions',
-      header: () => t('Actions'),
       cell: ({ row }) => <DataTableRowActions row={row} />,
-      meta: { pinned: 'right' as const },
+      meta: { label: t('Actions') },
     },
   ]
 }

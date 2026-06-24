@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { LayoutDashboard } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -53,98 +53,115 @@ export function SidebarModulesCard() {
   const currentUser = useAuthStore((s) => s.auth.user)
   const setUser = useAuthStore((s) => s.auth.setUser)
 
-  const sectionDefs: SectionDef[] = [
-    {
-      key: 'chat',
-      title: t('Chat Area'),
-      description: t('Playground and chat functions'),
-      modules: [
-        {
-          key: 'playground',
-          title: t('Playground'),
-          description: t('AI model testing environment'),
-        },
-        {
-          key: 'chat',
-          title: t('Chat'),
-          description: t('Chat session management'),
-        },
-      ],
-    },
-    {
-      key: 'console',
-      title: t('Console Area'),
-      description: t('Data management and log viewing'),
-      modules: [
-        {
-          key: 'detail',
-          title: t('Dashboard'),
-          description: t('System data statistics'),
-        },
-        {
-          key: 'token',
-          title: t('Token Management'),
-          description: t('API token management'),
-        },
-        {
-          key: 'log',
-          title: t('Usage Logs'),
-          description: t('API usage records'),
-        },
-        {
-          key: 'midjourney',
-          title: t('Drawing Logs'),
-          description: t('Drawing task records'),
-        },
-        {
-          key: 'task',
-          title: t('Task Logs'),
-          description: t('System task records'),
-        },
-      ],
-    },
-    {
-      key: 'personal',
-      title: t('Personal Center Area'),
-      description: t('User personal functions'),
-      modules: [
-        {
-          key: 'topup',
-          title: t('Wallet Management'),
-          description: t('Balance and top-up management'),
-        },
-        {
-          key: 'personal',
-          title: t('Personal Settings'),
-          description: t('Personal info settings'),
-        },
-      ],
-    },
-  ]
+  const sectionDefs = useMemo<SectionDef[]>(
+    () => [
+      {
+        key: 'chat',
+        title: t('Chat Area'),
+        description: t('Playground and chat functions'),
+        modules: [
+          {
+            key: 'playground',
+            title: t('Playground'),
+            description: t('AI model testing environment'),
+          },
+          {
+            key: 'chat',
+            title: t('Chat'),
+            description: t('Chat session management'),
+          },
+        ],
+      },
+      {
+        key: 'console',
+        title: t('Console Area'),
+        description: t('Data management and log viewing'),
+        modules: [
+          {
+            key: 'detail',
+            title: t('Dashboard'),
+            description: t('System data statistics'),
+          },
+          {
+            key: 'token',
+            title: t('Token Management'),
+            description: t('API token management'),
+          },
+          {
+            key: 'log',
+            title: t('Usage Logs'),
+            description: t('API usage records'),
+          },
+          {
+            key: 'carpool',
+            title: t('Carpool Stats'),
+            description: t('Carpool quota statistics'),
+          },
+          {
+            key: 'midjourney',
+            title: t('Drawing Logs'),
+            description: t('Drawing task records'),
+          },
+          {
+            key: 'task',
+            title: t('Task Logs'),
+            description: t('System task records'),
+          },
+        ],
+      },
+      {
+        key: 'personal',
+        title: t('Personal Center Area'),
+        description: t('User personal functions'),
+        modules: [
+          {
+            key: 'topup',
+            title: t('Wallet Management'),
+            description: t('Balance and top-up management'),
+          },
+          {
+            key: 'personal',
+            title: t('Personal Settings'),
+            description: t('Personal info settings'),
+          },
+        ],
+      },
+    ],
+    [t]
+  )
+
+  const createDefaultConfig = useCallback(() => {
+    const defaults: SidebarModulesConfig = {}
+    for (const sec of sectionDefs) {
+      defaults[sec.key] = { enabled: true }
+      for (const mod of sec.modules) defaults[sec.key][mod.key] = true
+    }
+    return defaults
+  }, [sectionDefs])
 
   const loadConfig = useCallback(async () => {
     try {
       const res = await api.get('/api/user/self')
       if (res.data.success && res.data.data?.sidebar_modules) {
         const raw = res.data.data.sidebar_modules
-        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-        setConfig(parsed)
-      } else {
-        const defaults: SidebarModulesConfig = {}
-        for (const sec of sectionDefs) {
-          defaults[sec.key] = { enabled: true }
-          for (const mod of sec.modules) defaults[sec.key][mod.key] = true
-        }
-        setConfig(defaults)
+        return typeof raw === 'string' ? JSON.parse(raw) : raw
       }
+      return createDefaultConfig()
     } catch {
-      /* ignore */
+      return null
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [createDefaultConfig])
 
   useEffect(() => {
-    loadConfig()
+    let cancelled = false
+    void loadConfig().then((loadedConfig) => {
+      if (!cancelled && loadedConfig) {
+        setConfig(loadedConfig)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
   }, [loadConfig])
 
   const toggleSection = (sectionKey: string, val: boolean) => {
@@ -190,17 +207,12 @@ export function SidebarModulesCard() {
   }
 
   const handleReset = () => {
-    const defaults: SidebarModulesConfig = {}
-    for (const sec of sectionDefs) {
-      defaults[sec.key] = { enabled: true }
-      for (const mod of sec.modules) defaults[sec.key][mod.key] = true
-    }
-    setConfig(defaults)
+    setConfig(createDefaultConfig())
     toast.success(t('Reset to default configuration'))
   }
 
   return (
-    <Card data-card-hover='false' className='gap-0 overflow-hidden py-0'>
+    <Card className='gap-0 overflow-hidden py-0'>
       <CardHeader className='border-b p-3 !pb-3 sm:p-5 sm:!pb-5'>
         <div className='flex items-center gap-3'>
           <div className='bg-muted flex h-8 w-8 shrink-0 items-center justify-center rounded-lg sm:h-9 sm:w-9'>
@@ -240,7 +252,7 @@ export function SidebarModulesCard() {
                 {section.modules.map((mod) => (
                   <div
                     key={mod.key}
-                    className={`flex min-h-16 items-center justify-between rounded-lg border p-3 ${
+                    className={`flex min-h-16 items-center justify-between rounded-lg border p-3 transition-opacity ${
                       sectionEnabled ? '' : 'opacity-50'
                     }`}
                   >

@@ -9,7 +9,9 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -29,6 +31,53 @@ func buildMaskedTokenResponses(tokens []*model.Token) []*model.Token {
 		maskedTokens = append(maskedTokens, buildMaskedTokenResponse(token))
 	}
 	return maskedTokens
+}
+
+func validateTokenGroupForUser(c *gin.Context, tokenGroup string) bool {
+	tokenGroup = strings.TrimSpace(tokenGroup)
+	if tokenGroup == "" {
+		return true
+	}
+	userGroup, err := model.GetUserGroup(c.GetInt("id"), false)
+	if err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	if _, ok := service.GetUserUsableGroups(userGroup)[tokenGroup]; !ok {
+		common.ApiError(c, fmt.Errorf("无权使用 %s 分组", tokenGroup))
+		return false
+	}
+	if tokenGroup != "auto" && !ratio_setting.ContainsGroupRatio(tokenGroup) {
+		common.ApiError(c, fmt.Errorf("分组 %s 已被弃用", tokenGroup))
+		return false
+	}
+	return true
+}
+
+func normalizeAndValidateTokenGroupConfig(c *gin.Context, token *model.Token) bool {
+	if token == nil {
+		common.ApiError(c, fmt.Errorf("令牌为空"))
+		return false
+	}
+	cfg := token.ParseGroupConfig()
+	if len(cfg.Groups) == 0 && strings.TrimSpace(token.Group) != "" {
+		cfg = model.DefaultTokenGroupConfig(token.Group)
+	}
+	if len(cfg.Groups) == 0 {
+		token.Group = strings.TrimSpace(token.Group)
+		token.GroupConfig = ""
+		return validateTokenGroupForUser(c, token.Group)
+	}
+	for _, item := range cfg.Groups {
+		if !validateTokenGroupForUser(c, item.Group) {
+			return false
+		}
+	}
+	if err := token.SetGroupConfig(cfg); err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	return true
 }
 
 func GetAllTokens(c *gin.Context) {
@@ -201,6 +250,10 @@ func AddToken(c *gin.Context) {
 		})
 		return
 	}
+	token.Group = strings.TrimSpace(token.Group)
+	if !normalizeAndValidateTokenGroupConfig(c, &token) {
+		return
+	}
 	key, err := common.GenerateKey()
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgTokenGenerateFailed)
@@ -221,12 +274,14 @@ func AddToken(c *gin.Context) {
 		AllowIps:           token.AllowIps,
 		Group:              token.Group,
 		CrossGroupRetry:    token.CrossGroupRetry,
+		GroupConfig:        token.GroupConfig,
 	}
 	err = cleanToken.Insert()
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	service.ClearTokenGroupHealth(cleanToken.Id)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -241,6 +296,7 @@ func DeleteToken(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	service.ClearTokenGroupHealth(id)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -289,6 +345,10 @@ func UpdateToken(c *gin.Context) {
 	if statusOnly != "" {
 		cleanToken.Status = token.Status
 	} else {
+		token.Group = strings.TrimSpace(token.Group)
+		if !normalizeAndValidateTokenGroupConfig(c, &token) {
+			return
+		}
 		// If you add more fields, please also update token.Update()
 		cleanToken.Name = token.Name
 		cleanToken.ExpiredTime = token.ExpiredTime
@@ -299,12 +359,14 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.AllowIps = token.AllowIps
 		cleanToken.Group = token.Group
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
+		cleanToken.GroupConfig = token.GroupConfig
 	}
 	err = cleanToken.Update()
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	service.ClearTokenGroupHealth(cleanToken.Id)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

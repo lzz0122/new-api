@@ -21,7 +21,7 @@ import { Pencil, Trash2, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { BadgeCell, StaticDataTable } from '@/components/data-table'
+import { StaticDataTable } from '@/components/data-table'
 import { StatusBadge } from '@/components/status-badge'
 import { useDeleteProvider } from '../hooks/use-custom-oauth-mutations'
 import type { CustomOAuthProvider } from '../types'
@@ -83,33 +83,28 @@ export function ProviderTable(props: ProviderTableProps) {
             id: 'slug',
             header: t('Slug'),
             cell: (provider) => (
-              <BadgeCell>
-                <StatusBadge
-                  label={provider.slug}
-                  variant='neutral'
-                  copyable={false}
-                />
-              </BadgeCell>
+              <StatusBadge
+                label={provider.slug}
+                variant='neutral'
+                copyable={false}
+              />
             ),
           },
           {
             id: 'status',
             header: t('Status'),
             cell: (provider) => (
-              <BadgeCell>
-                <StatusBadge
-                  label={provider.enabled ? t('Enabled') : t('Disabled')}
-                  variant={provider.enabled ? 'success' : 'neutral'}
-                  copyable={false}
-                />
-              </BadgeCell>
+              <StatusBadge
+                label={provider.enabled ? t('Enabled') : t('Disabled')}
+                variant={provider.enabled ? 'success' : 'neutral'}
+                copyable={false}
+              />
             ),
           },
           {
             id: 'client-id',
             header: t('Client ID'),
-            cellClassName:
-              'text-muted-foreground max-w-[120px] truncate font-mono',
+            cellClassName: 'text-muted-foreground max-w-[120px] truncate font-mono',
             cell: (provider) => provider.client_id,
           },
           {

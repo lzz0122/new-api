@@ -27,10 +27,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { BadgeCell, BadgeListCell } from '@/components/data-table'
+import { DataTableColumnHeader } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
 import { ProviderBadge } from '@/components/provider-badge'
-import { StatusBadge } from '@/components/status-badge'
+import { StatusBadge, StatusBadgeList } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
 import {
   getModelStatusConfig,
@@ -46,6 +46,22 @@ function getCompactModelIcon(iconKey: string) {
   const baseIconKey = iconKey.split('.')[0]
 
   return getLobeIcon(`${baseIconKey}.Avatar.type={'platform'}`, 20)
+}
+
+/**
+ * Render limited items with "and X more" indicator
+ */
+function renderLimitedItems(
+  items: React.ReactNode[],
+  maxDisplay: number = 2
+): React.ReactNode {
+  return (
+    <StatusBadgeList
+      items={items}
+      max={maxDisplay}
+      renderItem={(item) => item}
+    />
+  )
 }
 
 /**
@@ -91,8 +107,10 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // ID column
     {
       accessorKey: 'id',
-      header: t('ID'),
-      meta: { mobileHidden: true },
+      meta: { label: t('ID'), mobileHidden: true },
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title='ID' />
+      ),
       cell: ({ row }) => {
         const id = row.getValue('id') as number
         return <TableId value={id} />
@@ -103,8 +121,8 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // Icon column
     {
       accessorKey: 'icon',
+      meta: { label: t('Icon'), mobileHidden: true },
       header: t('Icon'),
-      meta: { mobileHidden: true },
       cell: ({ row }) => {
         const model = row.original
         const iconKey =
@@ -127,8 +145,10 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // Model Name column
     {
       accessorKey: 'model_name',
-      header: t('Model Name'),
-      meta: { mobileTitle: true },
+      meta: { label: t('Model Name'), mobileTitle: true },
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Model Name')} />
+      ),
       cell: ({ row }) => {
         const name = row.getValue('model_name') as string
         return (
@@ -137,7 +157,7 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
             variant='neutral'
             copyText={name}
             size='sm'
-            className='-ml-1.5 font-mono'
+            className='font-mono'
           />
         )
       },
@@ -147,7 +167,10 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // Name Rule column
     {
       accessorKey: 'name_rule',
-      header: t('Match Type'),
+      meta: { label: t('Match Type') },
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Match Type')} />
+      ),
       cell: ({ row }) => {
         const rule = row.getValue('name_rule') as 0 | 1 | 2 | 3
         const model = row.original
@@ -170,7 +193,6 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
                 | 'info'
             }
             size='sm'
-            className='-ml-1.5'
           />
         )
 
@@ -187,9 +209,7 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
           return (
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger render={<div className='-ml-1.5' />}>
-                  {badge}
-                </TooltipTrigger>
+                <TooltipTrigger render={<div />}>{badge}</TooltipTrigger>
                 <TooltipContent
                   side='top'
                   className='border-border bg-popover max-h-48 max-w-[320px] overflow-y-auto p-2'
@@ -210,8 +230,8 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // Status column
     {
       accessorKey: 'status',
+      meta: { label: t('Status'), mobileBadge: true },
       header: t('Status'),
-      meta: { mobileBadge: true },
       cell: ({ row }) => {
         const status = row.getValue('status') as number
         const config =
@@ -223,7 +243,6 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
             variant={config.variant}
             size='sm'
             copyable={false}
-            className='-ml-1.5'
           />
         )
       },
@@ -241,6 +260,7 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // Vendor column
     {
       accessorKey: 'vendor_id',
+      meta: { label: t('Vendor') },
       header: t('Vendor'),
       cell: ({ row }) => {
         const vendorId = row.getValue('vendor_id') as number
@@ -250,11 +270,7 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
           return <span className='text-muted-foreground text-xs'>-</span>
         }
 
-        return (
-          <BadgeCell>
-            <ProviderBadge iconKey={vendor.icon} label={vendor.name} />
-          </BadgeCell>
-        )
+        return <ProviderBadge iconKey={vendor.icon} label={vendor.name} />
       },
       filterFn: (row, id, value) => {
         if (!value || value.length === 0 || value.includes('all')) return true
@@ -267,8 +283,8 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // Description column
     {
       accessorKey: 'description',
+      meta: { label: t('Description'), mobileHidden: true },
       header: t('Description'),
-      meta: { mobileHidden: true },
       cell: ({ row }) => {
         const description = row.getValue('description') as string
         const modelName = row.getValue('model_name') as string
@@ -284,17 +300,36 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // Tags column
     {
       accessorKey: 'tags',
+      meta: { label: t('Tags'), mobileHidden: true },
       header: t('Tags'),
-      meta: { mobileHidden: true },
       cell: ({ row }) => {
         const tags = row.getValue('tags') as string
         const tagArray = parseModelTags(tags)
+
+        if (tagArray.length === 0) {
+          return <span className='text-muted-foreground text-xs'>-</span>
+        }
+
+        const tagBadges = tagArray.map((tag, idx) => (
+          <StatusBadge key={idx} label={tag} autoColor={tag} size='sm' />
+        ))
+
         return (
-          <BadgeListCell
-            items={tagArray.map((tag, idx) => (
-              <StatusBadge key={idx} label={tag} autoColor={tag} size='sm' />
-            ))}
-          />
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger render={<div />}>
+                {renderLimitedItems(tagBadges, 2)}
+              </TooltipTrigger>
+              {tagArray.length > 2 && (
+                <TooltipContent
+                  side='top'
+                  className='border-border bg-popover max-h-48 max-w-[320px] overflow-y-auto p-2'
+                >
+                  <div className='flex flex-wrap gap-1'>{tagBadges}</div>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
         )
       },
       size: 150,
@@ -304,17 +339,36 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // Endpoints column
     {
       accessorKey: 'endpoints',
+      meta: { label: t('Endpoints'), mobileHidden: true },
       header: t('Endpoints'),
-      meta: { mobileHidden: true },
       cell: ({ row }) => {
         const endpoints = row.getValue('endpoints') as string
         const endpointArray = formatEndpointsDisplay(endpoints)
+
+        if (endpointArray.length === 0) {
+          return <span className='text-muted-foreground text-xs'>-</span>
+        }
+
+        const endpointBadges = endpointArray.map((ep, idx) => (
+          <StatusBadge key={idx} label={ep} autoColor={ep} size='sm' />
+        ))
+
         return (
-          <BadgeListCell
-            items={endpointArray.map((ep, idx) => (
-              <StatusBadge key={idx} label={ep} autoColor={ep} size='sm' />
-            ))}
-          />
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger render={<div />}>
+                {renderLimitedItems(endpointBadges, 2)}
+              </TooltipTrigger>
+              {endpointArray.length > 2 && (
+                <TooltipContent
+                  side='top'
+                  className='border-border bg-popover max-h-48 max-w-[320px] overflow-y-auto p-2'
+                >
+                  <div className='flex flex-wrap gap-1'>{endpointBadges}</div>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
         )
       },
       size: 150,
@@ -324,8 +378,8 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // Bound Channels column
     {
       accessorKey: 'bound_channels',
+      meta: { label: t('Bound Channels'), mobileHidden: true },
       header: t('Bound Channels'),
-      meta: { mobileHidden: true },
       cell: ({ row }) => {
         const channels = row.getValue('bound_channels') as Array<{
           id: number
@@ -333,17 +387,36 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
           type?: number
           status?: number
         }>
-        return (
-          <BadgeListCell
-            items={(channels ?? []).map((c, idx) => (
-              <StatusBadge
-                key={idx}
-                label={`${c.name} (${c.type})`}
-                autoColor={c.name}
-                size='sm'
-              />
-            ))}
+
+        if (!channels || channels.length === 0) {
+          return <span className='text-muted-foreground text-xs'>-</span>
+        }
+
+        const channelBadges = channels.map((c, idx) => (
+          <StatusBadge
+            key={idx}
+            label={`${c.name} (${c.type})`}
+            autoColor={c.name}
+            size='sm'
           />
+        ))
+
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger render={<div />}>
+                {renderLimitedItems(channelBadges, 2)}
+              </TooltipTrigger>
+              {channels.length > 2 && (
+                <TooltipContent
+                  side='top'
+                  className='border-border bg-popover max-h-48 max-w-[320px] overflow-y-auto p-2'
+                >
+                  <div className='flex flex-wrap gap-1'>{channelBadges}</div>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
         )
       },
       size: 150,
@@ -353,16 +426,37 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // Enable Groups column
     {
       accessorKey: 'enable_groups',
-      header: t('Enable Groups'),
-      meta: { mobileHidden: true },
+      meta: { label: t('Enable Groups'), mobileHidden: true },
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Enable Groups')} />
+      ),
       cell: ({ row }) => {
         const groups = row.getValue('enable_groups') as string[]
+
+        if (!groups || groups.length === 0) {
+          return <span className='text-muted-foreground text-xs'>-</span>
+        }
+
+        const groupBadges = groups.map((g) => (
+          <GroupBadge key={g} group={g} size='sm' />
+        ))
+
         return (
-          <BadgeListCell
-            items={(groups ?? []).map((g) => (
-              <GroupBadge key={g} group={g} size='sm' />
-            ))}
-          />
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger render={<div />}>
+                {renderLimitedItems(groupBadges, 2)}
+              </TooltipTrigger>
+              {groups.length > 2 && (
+                <TooltipContent
+                  side='top'
+                  className='border-border bg-popover max-h-48 max-w-[320px] overflow-y-auto p-2'
+                >
+                  <div className='flex flex-wrap gap-1'>{groupBadges}</div>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
         )
       },
       size: 150,
@@ -372,31 +466,50 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // Quota Types column
     {
       accessorKey: 'quota_types',
+      meta: { label: t('Quota Types'), mobileHidden: true },
       header: t('Quota Types'),
-      meta: { mobileHidden: true },
       cell: ({ row }) => {
         const quotaTypes = row.getValue('quota_types') as number[]
+
+        if (!quotaTypes || quotaTypes.length === 0) {
+          return <span className='text-muted-foreground text-xs'>-</span>
+        }
+
+        const quotaBadges = quotaTypes.map((qt, idx) => {
+          const config = QUOTA_TYPE_CONFIG[qt]
+          return (
+            <StatusBadge
+              key={idx}
+              label={config?.label || String(qt)}
+              variant={
+                (config?.color === 'error' ? 'danger' : config?.color) as
+                  | 'neutral'
+                  | 'success'
+                  | 'warning'
+                  | 'danger'
+                  | 'info'
+              }
+              size='sm'
+            />
+          )
+        })
+
         return (
-          <BadgeListCell
-            items={(quotaTypes ?? []).map((qt, idx) => {
-              const config = QUOTA_TYPE_CONFIG[qt]
-              return (
-                <StatusBadge
-                  key={idx}
-                  label={config?.label || String(qt)}
-                  variant={
-                    (config?.color === 'error' ? 'danger' : config?.color) as
-                      | 'neutral'
-                      | 'success'
-                      | 'warning'
-                      | 'danger'
-                      | 'info'
-                  }
-                  size='sm'
-                />
-              )
-            })}
-          />
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger render={<div />}>
+                {renderLimitedItems(quotaBadges, 2)}
+              </TooltipTrigger>
+              {quotaTypes.length > 2 && (
+                <TooltipContent
+                  side='top'
+                  className='border-border bg-popover max-h-48 max-w-[320px] overflow-y-auto p-2'
+                >
+                  <div className='flex flex-wrap gap-1'>{quotaBadges}</div>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
         )
       },
       size: 150,
@@ -406,8 +519,8 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // Sync Official column
     {
       accessorKey: 'sync_official',
+      meta: { label: t('Official Sync'), mobileHidden: true },
       header: t('Official Sync'),
-      meta: { mobileHidden: true },
       cell: ({ row }) => {
         const syncOfficial = row.getValue('sync_official') as number
         return (
@@ -416,7 +529,6 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
             variant={syncOfficial === 1 ? 'success' : 'warning'}
             size='sm'
             copyable={false}
-            className='-ml-1.5'
           />
         )
       },
@@ -434,8 +546,10 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // Created Time column
     {
       accessorKey: 'created_time',
-      header: t('Created'),
-      meta: { mobileHidden: true },
+      meta: { label: t('Created'), mobileHidden: true },
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Created')} />
+      ),
       cell: ({ row }) => {
         const timestamp = row.getValue('created_time') as number
         return (
@@ -450,8 +564,10 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // Updated Time column
     {
       accessorKey: 'updated_time',
-      header: t('Updated'),
-      meta: { mobileHidden: true },
+      meta: { label: t('Updated'), mobileHidden: true },
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Updated')} />
+      ),
       cell: ({ row }) => {
         const timestamp = row.getValue('updated_time') as number
         return (
@@ -466,14 +582,12 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // Actions column
     {
       id: 'actions',
-      header: () => t('Actions'),
       cell: ({ row }) => {
         return <DataTableRowActions row={row} />
       },
       size: 100,
       enableSorting: false,
       enableHiding: false,
-      meta: { pinned: 'right' as const },
     },
   ]
 }

@@ -38,6 +38,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatTimestampToDate } from '@/lib/format'
+import { DataTableColumnHeader } from '@/components/data-table'
 import { StatusBadge } from '@/components/status-badge'
 import { MJ_TASK_TYPES } from '../../constants'
 import {
@@ -86,7 +87,9 @@ export function useDrawingLogsColumns(
   const columns: ColumnDef<MidjourneyLog>[] = [
     {
       accessorKey: 'submit_time',
-      header: t('Submit Time'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Submit Time')} />
+      ),
       cell: ({ row }) => {
         const log = row.original
         const submitTime = row.getValue('submit_time') as number
@@ -94,7 +97,7 @@ export function useDrawingLogsColumns(
         return (
           <div className='flex min-w-0 flex-col gap-0.5'>
             <span className='truncate font-mono text-xs tabular-nums'>
-              {formatTimestampToDate(submitTime, 'milliseconds')}
+              {formatTimestampToDate(submitTime)}
             </span>
             <StatusBadge
               label={t(mjStatusMapper.getLabel(log.status))}
@@ -106,6 +109,7 @@ export function useDrawingLogsColumns(
         )
       },
       size: 180,
+      meta: { label: t('Submit Time') },
     },
   ]
 
@@ -117,7 +121,9 @@ export function useDrawingLogsColumns(
 
   columns.push({
     accessorKey: 'action',
-    header: t('Type'),
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title={t('Type')} />
+    ),
     cell: ({ row }) => {
       const action = row.getValue('action') as string
       return (
@@ -127,15 +133,17 @@ export function useDrawingLogsColumns(
           icon={getDrawingTypeIcon(action)}
           size='sm'
           copyable={false}
-          className='-ml-1.5'
         />
       )
     },
+    meta: { label: t('Type') },
   })
 
   columns.push({
     accessorKey: 'mj_id',
-    header: t('Task ID'),
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title={t('Task ID')} />
+    ),
     cell: ({ row }) => {
       const mjId = row.getValue('mj_id') as string
 
@@ -154,7 +162,7 @@ export function useDrawingLogsColumns(
         </div>
       )
     },
-    meta: { mobileTitle: true },
+    meta: { label: t('Task ID'), mobileTitle: true },
   })
 
   columns.push(
@@ -168,7 +176,9 @@ export function useDrawingLogsColumns(
   if (isAdmin) {
     columns.push({
       accessorKey: 'code',
-      header: t('Submit Result'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Submit Result')} />
+      ),
       cell: ({ row }) => {
         const code = row.getValue('code') as number
 
@@ -178,10 +188,10 @@ export function useDrawingLogsColumns(
             variant={mjSubmitResultMapper.getVariant(String(code))}
             size='sm'
             copyable={false}
-            className='-ml-1.5'
           />
         )
       },
+      meta: { label: t('Submit Result') },
     })
   }
 
@@ -189,7 +199,9 @@ export function useDrawingLogsColumns(
     createProgressColumn<MidjourneyLog>({ headerLabel: t('Progress') }),
     {
       accessorKey: 'image_url',
-      header: t('Image'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Image')} />
+      ),
       cell: function ImageCell({ row }) {
         const log = row.original
         const imageUrl = row.getValue('image_url') as string
@@ -220,10 +232,13 @@ export function useDrawingLogsColumns(
           </>
         )
       },
+      meta: { label: t('Image') },
     },
     {
       accessorKey: 'prompt',
-      header: t('Prompt'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Prompt')} />
+      ),
       cell: function PromptCell({ row }) {
         const log = row.original
         const prompt = row.getValue('prompt') as string
@@ -254,6 +269,7 @@ export function useDrawingLogsColumns(
           </>
         )
       },
+      meta: { label: t('Prompt') },
       size: 200,
       maxSize: 220,
     },

@@ -34,6 +34,7 @@ export const apiKeySchema = z.object({
   created_time: z.number(),
   accessed_time: z.number(),
   group: z.string().nullish().default(''),
+  group_config: z.string().nullish().default(''),
   cross_group_retry: z
     .preprocess((v) => {
       if (v === 1) return true
@@ -91,7 +92,33 @@ export interface ApiKeyFormData {
   model_limits: string
   allow_ips: string
   group: string
+  group_config: string
   cross_group_retry: boolean
+}
+
+export interface ApiKeyGroupRoute {
+  group: string
+  order: number
+  failover_strategy?: 'fallback' | 'return_error'
+  timeout_seconds?: number
+  cooldown_seconds?: number
+  recovery_strategy?: 'probe_then_switch' | 'sticky'
+  failure_detection_strategy?: 'one' | 'half' | 'all' | 'ratio'
+  failure_detection_ratio?: number
+  recovery_detection_strategy?: 'one' | 'half' | 'all' | 'ratio'
+  recovery_detection_ratio?: number
+}
+
+export interface ApiKeyGroupConfig {
+  groups: ApiKeyGroupRoute[]
+  failover_strategy: 'fallback' | 'return_error'
+  timeout_seconds: number
+  cooldown_seconds: number
+  recovery_strategy: 'probe_then_switch' | 'sticky'
+  failure_detection_strategy: 'one' | 'half' | 'all' | 'ratio'
+  failure_detection_ratio: number
+  recovery_detection_strategy: 'one' | 'half' | 'all' | 'ratio'
+  recovery_detection_ratio: number
 }
 
 // ============================================================================

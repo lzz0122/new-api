@@ -153,17 +153,7 @@ func authHelper(c *gin.Context, minRole int) {
 	c.Set("user_group", session.Get("group"))
 	c.Set("use_access_token", useAccessToken)
 
-	// 管理/root 写操作审计兜底：内聚在鉴权链路里，保证任何经过 AdminAuth/RootAuth
-	// 的写接口都会自动留痕（无需在路由上单独挂审计中间件，避免漏挂）。
-	// handler 内手动埋点者会设置 ContextKeyAuditLogged，finishAdminAudit 据此跳过。
-	var auditWriter *auditResponseWriter
-	if minRole >= common.RoleAdminUser {
-		auditWriter = beginAdminAudit(c)
-	}
-
 	c.Next()
-
-	finishAdminAudit(c, auditWriter)
 }
 
 func TryUserAuth() func(c *gin.Context) {
@@ -390,8 +380,9 @@ func TokenAuth() func(c *gin.Context) {
 		userCache.WriteContext(c)
 
 		userGroup := userCache.Group
-		tokenGroup := token.Group
-		if tokenGroup != "" {
+		tokenGroupConfig := token.ParseGroupConfig()
+		for _, groupItem := range tokenGroupConfig.Groups {
+			tokenGroup := groupItem.Group
 			// check common.UserUsableGroups[userGroup]
 			if _, ok := service.GetUserUsableGroups(userGroup)[tokenGroup]; !ok {
 				abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("无权访问 %s 分组", tokenGroup))
@@ -404,9 +395,17 @@ func TokenAuth() func(c *gin.Context) {
 					return
 				}
 			}
+		}
+		tokenGroup := token.Group
+		if len(tokenGroupConfig.Groups) > 0 {
+			tokenGroup = tokenGroupConfig.Groups[0].Group
+		}
+		if tokenGroup != "" {
 			userGroup = tokenGroup
 		}
 		common.SetContextKey(c, constant.ContextKeyUsingGroup, userGroup)
+		common.SetContextKey(c, constant.ContextKeyTokenGroupConfig, tokenGroupConfig)
+		common.SetContextKey(c, constant.ContextKeyTokenGroupTimeout, tokenGroupConfig.TimeoutSeconds)
 
 		err = SetupContextForToken(c, token, parts...)
 		if err != nil {
@@ -436,6 +435,8 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 	}
 	common.SetContextKey(c, constant.ContextKeyTokenGroup, token.Group)
 	common.SetContextKey(c, constant.ContextKeyTokenCrossGroupRetry, token.CrossGroupRetry)
+	common.SetContextKey(c, constant.ContextKeyTokenGroupConfig, token.ParseGroupConfig())
+	common.SetContextKey(c, constant.ContextKeyTokenGroupTimeout, token.ParseGroupConfig().TimeoutSeconds)
 	if len(parts) > 1 {
 		if model.IsAdmin(token.UserId) {
 			c.Set("specific_channel_id", parts[1])

@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
@@ -21,6 +22,15 @@ func GetGroups(c *gin.Context) {
 		"message": "",
 		"data":    groupNames,
 	})
+}
+
+func GetUserGroupOptions(c *gin.Context) {
+	groups, err := service.GetUserGroupOptions()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, groups)
 }
 
 func GetUserGroups(c *gin.Context) {

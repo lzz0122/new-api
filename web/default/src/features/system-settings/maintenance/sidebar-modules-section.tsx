@@ -106,6 +106,10 @@ export function SidebarModulesSection({
         title: t('Usage logs'),
         description: t('Detailed request logs for investigations.'),
       },
+      carpool: {
+        title: t('Carpool Stats'),
+        description: t('Carpool quota statistics'),
+      },
       midjourney: {
         title: t('Drawing logs'),
         description: t('History of Midjourney-style image tasks.'),

@@ -29,6 +29,12 @@ func SetWebRouter(router *gin.Engine, assets ThemeAssets) {
 	router.Use(gzip.Gzip(gzip.DefaultCompression))
 	router.Use(middleware.GlobalWebRateLimit())
 	router.Use(middleware.Cache())
+	router.GET("/carpool-usage", func(c *gin.Context) {
+		c.Redirect(http.StatusFound, "/usage-logs/carpool")
+	})
+	router.GET("/carpool-usage/", func(c *gin.Context) {
+		c.Redirect(http.StatusFound, "/usage-logs/carpool")
+	})
 	router.Use(static.Serve("/", themeFS))
 	router.NoRoute(func(c *gin.Context) {
 		c.Set(middleware.RouteTagKey, "web")

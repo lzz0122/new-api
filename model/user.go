@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -116,6 +117,7 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 		"detail":     true,
 		"token":      true,
 		"log":        true,
+		"carpool":    true,
 		"midjourney": true,
 		"task":       true,
 	}
@@ -264,11 +266,7 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 		query = query.Where("role = ?", *role)
 	}
 	if status != nil {
-		if *status == -1 {
-			query = query.Where("deleted_at IS NOT NULL")
-		} else {
-			query = query.Where("deleted_at IS NULL").Where("status = ?", *status)
-		}
+		query = query.Where("status = ?", *status)
 	}
 
 	// 获取总数
@@ -291,6 +289,37 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 	}
 
 	return users, total, nil
+}
+
+func ListUserGroups() ([]string, error) {
+	var rawGroups []string
+	groupColumn := "group"
+	if strings.TrimSpace(commonGroupCol) != "" {
+		groupColumn = commonGroupCol
+	}
+	if err := DB.Unscoped().
+		Model(&User{}).
+		Distinct().
+		Pluck(groupColumn, &rawGroups).Error; err != nil {
+		return nil, err
+	}
+
+	groupSet := make(map[string]struct{}, len(rawGroups)+1)
+	groupSet["default"] = struct{}{}
+	for _, group := range rawGroups {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			continue
+		}
+		groupSet[group] = struct{}{}
+	}
+
+	groups := make([]string, 0, len(groupSet))
+	for group := range groupSet {
+		groups = append(groups, group)
+	}
+	sort.Strings(groups)
+	return groups, nil
 }
 
 func GetUserById(id int, selectAll bool) (*User, error) {
@@ -328,12 +357,8 @@ func HardDeleteUserById(id int) error {
 	if id == 0 {
 		return errors.New("id 为空！")
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		if err := deleteUserOAuthBindingsByUserId(tx, id); err != nil {
-			return err
-		}
-		return tx.Unscoped().Delete(&User{}, "id = ?", id).Error
-	})
+	err := DB.Unscoped().Delete(&User{}, "id = ?", id).Error
+	return err
 }
 
 func inviteUser(inviterId int) (err error) {
@@ -593,12 +618,8 @@ func (user *User) HardDelete() error {
 	if user.Id == 0 {
 		return errors.New("id 为空！")
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		if err := deleteUserOAuthBindingsByUserId(tx, user.Id); err != nil {
-			return err
-		}
-		return tx.Unscoped().Delete(user).Error
-	})
+	err := DB.Unscoped().Delete(user).Error
+	return err
 }
 
 // ValidateAndFill check password & user status

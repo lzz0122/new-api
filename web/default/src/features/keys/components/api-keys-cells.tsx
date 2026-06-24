@@ -32,7 +32,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { BadgeCell } from '@/components/data-table'
 import { StatusBadge } from '@/components/status-badge'
 import { type ApiKey } from '../types'
 import { useApiKeys } from './api-keys-provider'
@@ -158,12 +157,7 @@ export function ModelLimitsCell({ apiKey }: { apiKey: ApiKey }) {
 
   if (!apiKey.model_limits_enabled || !apiKey.model_limits) {
     return (
-      <StatusBadge
-        label={t('Unlimited')}
-        variant='neutral'
-        copyable={false}
-        className='-ml-1.5'
-      />
+      <StatusBadge label={t('Unlimited')} variant='neutral' copyable={false} />
     )
   }
 
@@ -171,7 +165,7 @@ export function ModelLimitsCell({ apiKey }: { apiKey: ApiKey }) {
 
   return (
     <Tooltip>
-      <TooltipTrigger render={<BadgeCell />}>
+      <TooltipTrigger render={<span />}>
         <StatusBadge
           label={t('{{count}} model(s)', { count: models.length })}
           variant='neutral'
@@ -201,7 +195,6 @@ export function IpRestrictionsCell({ apiKey }: { apiKey: ApiKey }) {
         label={t('No restriction')}
         variant='neutral'
         copyable={false}
-        className='-ml-1.5'
       />
     )
   }
@@ -213,7 +206,7 @@ export function IpRestrictionsCell({ apiKey }: { apiKey: ApiKey }) {
 
   return (
     <Tooltip>
-      <TooltipTrigger render={<BadgeCell />}>
+      <TooltipTrigger render={<span />}>
         <StatusBadge
           label={t('{{count}} IP(s)', { count: ips.length })}
           variant='neutral'

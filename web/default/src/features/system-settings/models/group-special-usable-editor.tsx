@@ -32,6 +32,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import { Combobox } from '@/components/ui/combobox'
+import { type ComboboxInputOption } from '@/components/ui/combobox-input'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -45,12 +47,17 @@ import { StatusBadge } from '@/components/status-badge'
 
 const OP_ADD = 'add' as const
 const OP_REMOVE = 'remove' as const
+const OP_ONLY = 'only' as const
 const OP_APPEND = 'append' as const
 const sectionCardClassName =
   'relative shadow-sm ring-0 before:pointer-events-none before:absolute before:inset-0 before:rounded-xl before:border before:border-border/90'
 const sectionHeaderClassName = 'border-b bg-muted/20'
 
-type OpType = typeof OP_ADD | typeof OP_REMOVE | typeof OP_APPEND
+type OpType =
+  | typeof OP_ADD
+  | typeof OP_REMOVE
+  | typeof OP_ONLY
+  | typeof OP_APPEND
 
 type Rule = {
   _id: string
@@ -69,12 +76,15 @@ function parsePrefix(rawKey: string): { op: OpType; groupName: string } {
   if (rawKey.startsWith('+:')) return { op: OP_ADD, groupName: rawKey.slice(2) }
   if (rawKey.startsWith('-:'))
     return { op: OP_REMOVE, groupName: rawKey.slice(2) }
+  if (rawKey.startsWith('=:'))
+    return { op: OP_ONLY, groupName: rawKey.slice(2) }
   return { op: OP_APPEND, groupName: rawKey }
 }
 
 function toRawKey(op: OpType, groupName: string): string {
   if (op === OP_ADD) return `+:${groupName}`
   if (op === OP_REMOVE) return `-:${groupName}`
+  if (op === OP_ONLY) return `=:${groupName}`
   return groupName
 }
 
@@ -125,21 +135,25 @@ function serializeRules(rules: Rule[]): string {
 
 const OP_BADGE_MAP: Record<
   OpType,
-  { variant: 'info' | 'danger' | 'neutral'; label: string }
+  { variant: 'info' | 'danger' | 'warning' | 'neutral'; label: string }
 > = {
   [OP_ADD]: { variant: 'info', label: 'Add (+:)' },
   [OP_REMOVE]: { variant: 'danger', label: 'Remove (-:)' },
+  [OP_ONLY]: { variant: 'warning', label: 'Only allow (=:)' },
   [OP_APPEND]: { variant: 'neutral', label: 'Append' },
 }
 
 type GroupSpecialUsableRulesEditorProps = {
   value: string
+  userGroupOptions: ComboboxInputOption[]
+  pricingGroupOptions: ComboboxInputOption[]
   onChange: (value: string) => void
 }
 
 type GroupSectionProps = {
   groupName: string
   items: Rule[]
+  pricingGroupOptions: ComboboxInputOption[]
   onUpdate: (id: string, field: keyof Rule, val: string) => void
   onRemove: (id: string) => void
   onAdd: (groupName: string) => void
@@ -217,6 +231,16 @@ function GroupSection(props: GroupSectionProps) {
                       ),
                     },
                     {
+                      value: OP_ONLY,
+                      label: (
+                        <StatusBadge
+                          label={t(OP_BADGE_MAP[OP_ONLY].label)}
+                          variant={OP_BADGE_MAP[OP_ONLY].variant}
+                          copyable={false}
+                        />
+                      ),
+                    },
+                    {
                       value: OP_APPEND,
                       label: (
                         <StatusBadge
@@ -232,7 +256,7 @@ function GroupSection(props: GroupSectionProps) {
                     v !== null && props.onUpdate(rule._id, 'op', v)
                   }
                 >
-                  <SelectTrigger className='w-[130px]'>
+                  <SelectTrigger className='w-[150px]'>
                     <SelectValue>
                       <StatusBadge
                         label={t(OP_BADGE_MAP[rule.op].label)}
@@ -257,6 +281,13 @@ function GroupSection(props: GroupSectionProps) {
                           copyable={false}
                         />
                       </SelectItem>
+                      <SelectItem value={OP_ONLY}>
+                        <StatusBadge
+                          label={t(OP_BADGE_MAP[OP_ONLY].label)}
+                          variant={OP_BADGE_MAP[OP_ONLY].variant}
+                          copyable={false}
+                        />
+                      </SelectItem>
                       <SelectItem value={OP_APPEND}>
                         <StatusBadge
                           label={t(OP_BADGE_MAP[OP_APPEND].label)}
@@ -267,12 +298,16 @@ function GroupSection(props: GroupSectionProps) {
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-                <Input
+                <Combobox
+                  options={props.pricingGroupOptions}
                   className='flex-1'
                   value={rule.targetGroup}
                   placeholder={t('Group name')}
-                  onChange={(e) =>
-                    props.onUpdate(rule._id, 'targetGroup', e.target.value)
+                  searchPlaceholder={t('Search pricing groups...')}
+                  emptyText={t('No pricing group found.')}
+                  onValueChange={(value) =>
+                    value !== null &&
+                    props.onUpdate(rule._id, 'targetGroup', value)
                   }
                 />
                 {rule.op !== OP_REMOVE ? (
@@ -405,7 +440,7 @@ export function GroupSpecialUsableRulesEditor(
         <CardTitle>{t('Special usable group rules')}</CardTitle>
         <CardDescription>
           {t(
-            'Define per-group rules to add, remove, or append selectable groups for specific user groups.'
+            'Define per-group rules to add, remove, only allow, or append selectable groups for specific user groups.'
           )}
         </CardDescription>
       </CardHeader>
@@ -417,30 +452,30 @@ export function GroupSpecialUsableRulesEditor(
             </p>
           ) : (
             grouped.map((group) => (
-              <GroupSection
-                key={group.name}
-                groupName={group.name}
-                items={group.items}
-                onUpdate={updateRule}
-                onRemove={removeRule}
-                onAdd={addRuleToGroup}
+                <GroupSection
+                  key={group.name}
+                  groupName={group.name}
+                  items={group.items}
+                  pricingGroupOptions={props.pricingGroupOptions}
+                  onUpdate={updateRule}
+                  onRemove={removeRule}
+                  onAdd={addRuleToGroup}
                 onRemoveGroup={removeGroup}
               />
             ))
           )}
 
           <div className='flex items-center justify-center gap-2 pt-2'>
-            <Input
+            <Combobox
+              options={props.userGroupOptions}
               className='w-[200px]'
               value={newGroupName}
               placeholder={t('User group name')}
-              onChange={(e) => setNewGroupName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  addNewGroup()
-                }
-              }}
+              searchPlaceholder={t('Search user groups...')}
+              emptyText={t('No user group found.')}
+              onValueChange={(value) =>
+                value !== null && setNewGroupName(value)
+              }
             />
             <Button variant='outline' size='sm' onClick={addNewGroup}>
               <Plus className='mr-1 h-4 w-4' />

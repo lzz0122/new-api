@@ -25,6 +25,7 @@ const PERIODS: { id: RankingPeriod; labelKey: string }[] = [
   { id: 'week', labelKey: 'Week' },
   { id: 'month', labelKey: 'Month' },
   { id: 'year', labelKey: 'Year' },
+  { id: 'all', labelKey: 'All-time' },
 ]
 
 type RankingsHeroProps = {
