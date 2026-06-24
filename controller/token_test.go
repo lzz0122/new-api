@@ -109,6 +109,18 @@ func setupTokenControllerTestDB(t *testing.T) *gorm.DB {
 
 	db := openTokenControllerTestDB(t)
 	migrateTokenControllerTestDB(t, db)
+	if err := db.AutoMigrate(&model.User{}); err != nil {
+		t.Fatalf("failed to migrate user table: %v", err)
+	}
+	if err := db.FirstOrCreate(&model.User{
+		Id:       1,
+		Username: "token-test-user",
+		Password: "password",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}, "id = ?", 1).Error; err != nil {
+		t.Fatalf("failed to seed token test user: %v", err)
+	}
 	return db
 }
 

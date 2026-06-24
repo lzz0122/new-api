@@ -29,24 +29,26 @@ import { PAYMENT_TYPES, PAYMENT_ICON_COLORS } from '../constants'
 // UI Helper Functions
 // ============================================================================
 
+const HAS_LOCATION =
+  typeof globalThis !== 'undefined' && 'location' in globalThis
+
 /**
- * Resolves a backend-provided image URL to https only. Rejects http:,
- * data:, blob:, file:, relative paths, and URLs with userinfo, which are unsafe
- * or ambiguous in <img src/>.
+ * Resolves a backend-provided image URL to http(s) only. Rejects javascript:,
+ * data:, blob:, file:, and URLs with userinfo, which are unsafe in <img src/>.
  */
 function normalizeHttpIconUrl(raw: string | undefined | null): string | null {
   if (!raw) return null
   const s = raw.trim()
   if (!s) return null
-  if (!/^https:\/\//i.test(s)) return null
-
   let url: URL
   try {
-    url = new URL(s)
+    url = HAS_LOCATION
+      ? new URL(s, (globalThis as { location: Location }).location.href)
+      : new URL(s)
   } catch {
     return null
   }
-  if (url.protocol !== 'https:') {
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     return null
   }
   if (url.username || url.password) {
@@ -58,18 +60,16 @@ function normalizeHttpIconUrl(raw: string | undefined | null): string | null {
 /**
  * Get payment method icon component
  *
- * When icon is provided, render a safe http(s) image URL or resolve it as a
- * react-icons component name. Invalid configured icons intentionally render
- * nothing instead of falling back to the payment type.
+ * When iconUrl is provided, render an <img/> with that URL so custom
+ * gateway logos can be configured per-method.
  */
 export function getPaymentIcon(
   paymentType: string | undefined,
   className: string = 'h-4 w-4',
-  icon?: string,
+  iconUrl?: string,
   altName?: string
 ): ReactNode {
-  const iconValue = icon?.trim()
-  const safeIconUrl = normalizeHttpIconUrl(iconValue)
+  const safeIconUrl = normalizeHttpIconUrl(iconUrl)
   if (safeIconUrl) {
     return (
       <img
@@ -80,15 +80,6 @@ export function getPaymentIcon(
         loading='lazy'
         decoding='async'
         referrerPolicy='no-referrer'
-      />
-    )
-  }
-  if (iconValue) {
-    return (
-      <ReactIconByName
-        name={iconValue}
-        className={className}
-        title={altName || paymentType || iconValue}
       />
     )
   }

@@ -175,6 +175,7 @@ func InitOptionMap() {
 	common.OptionMap["AutomaticDisableStatusCodes"] = operation_setting.AutomaticDisableStatusCodesToString()
 	common.OptionMap["AutomaticRetryStatusCodes"] = operation_setting.AutomaticRetryStatusCodesToString()
 	common.OptionMap["ExposeRatioEnabled"] = strconv.FormatBool(ratio_setting.IsExposeRatioEnabled())
+	common.OptionMap["carpool.finish_2fa_code"] = ""
 
 	// 自动添加所有注册的模型配置
 	modelConfigs := config.GlobalConfig.ExportAllConfigs()
@@ -601,6 +602,9 @@ func handleConfigUpdate(key, value string) bool {
 	// 特定配置的后处理
 	if configName == "performance_setting" {
 		performance_setting.UpdateAndSync()
+	} else if configName == "group_ratio_setting" {
+		InvalidatePricingCache()
+		ratio_setting.InvalidateExposedDataCache()
 	} else if configName == "tool_price_setting" {
 		operation_setting.RebuildToolPriceIndex()
 	} else if configName == "billing_setting" {

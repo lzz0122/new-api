@@ -35,7 +35,6 @@ export const isUserDeleted = (user: UserType): boolean => {
 export const USER_STATUS = {
   ENABLED: 1,
   DISABLED: 2,
-  DELETED: -1,
 } as const
 
 export const USER_STATUSES = {
@@ -49,17 +48,16 @@ export const USER_STATUSES = {
     variant: 'neutral' as const,
     value: USER_STATUS.DISABLED,
   },
-  [USER_STATUS.DELETED]: {
+  DELETED: {
     labelKey: 'Deleted',
     variant: 'danger' as const,
-    value: USER_STATUS.DELETED,
+    value: -1,
   },
 } as const
 
 export const getUserStatusOptions = (t: (key: string) => string) => [
   { label: t('Enabled'), value: String(USER_STATUS.ENABLED) },
   { label: t('Disabled'), value: String(USER_STATUS.DISABLED) },
-  { label: t('Deleted'), value: String(USER_STATUS.DELETED) },
 ]
 
 // ============================================================================

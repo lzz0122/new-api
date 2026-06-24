@@ -85,18 +85,18 @@ export function ConflictConfirmDialog({
               id: 'current',
               header: t('Current Billing'),
               cell: (conflict) => (
-                <pre className='text-sm whitespace-pre-wrap'>
-                  {conflict.current}
-                </pre>
+                  <pre className='text-sm whitespace-pre-wrap'>
+                    {conflict.current}
+                  </pre>
               ),
             },
             {
               id: 'new',
               header: t('Change To'),
               cell: (conflict) => (
-                <pre className='text-sm whitespace-pre-wrap'>
-                  {conflict.newVal}
-                </pre>
+                  <pre className='text-sm whitespace-pre-wrap'>
+                    {conflict.newVal}
+                  </pre>
               ),
             },
           ]}

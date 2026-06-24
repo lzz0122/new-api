@@ -19,6 +19,10 @@ const (
 	ContextKeyTokenModelLimitEnabled ContextKey = "token_model_limit_enabled"
 	ContextKeyTokenModelLimit        ContextKey = "token_model_limit"
 	ContextKeyTokenCrossGroupRetry   ContextKey = "token_cross_group_retry"
+	ContextKeyTokenGroupConfig       ContextKey = "token_group_config"
+	ContextKeyTokenGroupTimeout      ContextKey = "token_group_timeout"
+	ContextKeyTokenGroupIndex        ContextKey = "token_group_index"
+	ContextKeyFailedChannelIds       ContextKey = "failed_channel_ids"
 
 	/* channel related keys */
 	ContextKeyChannelId                ContextKey = "channel_id"
@@ -66,10 +70,4 @@ const (
 	// ContextKeyLanguage stores the user's language preference for i18n
 	ContextKeyLanguage ContextKey = "language"
 	ContextKeyIsStream ContextKey = "is_stream"
-
-	// ContextKeyAuditLogged marks that the current request has already recorded
-	// a manage/operation audit log inside the handler. When set, the admin-audit
-	// fallback in authHelper (finishAdminAudit) skips its record to avoid
-	// duplicate entries.
-	ContextKeyAuditLogged ContextKey = "audit_logged"
 )

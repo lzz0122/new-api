@@ -43,70 +43,47 @@ type PaymentMethodsVisualEditorProps = {
   onChange: (value: string) => void
 }
 
-const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
-  alipay: 'SiAlipay',
-  stripe: 'SiStripe',
-  waffo_pancake: 'LuCreditCard',
-  wxpay: 'SiWechat',
-}
-
-function getDefaultIconName(type: string) {
-  return PAYMENT_TYPE_ICON_NAMES[type] ?? ''
-}
-
-function getEffectiveIconName(method: PaymentMethodData) {
-  return method.icon || getDefaultIconName(method.type)
-}
+const PAYMENT_TEMPLATES = [
+  {
+    name: 'Alipay',
+    template: {
+      color: 'rgba(var(--semi-blue-5), 1)',
+      name: '支付宝',
+      type: 'alipay',
+    },
+  },
+  {
+    name: 'WeChat Pay',
+    template: {
+      color: 'rgba(var(--semi-green-5), 1)',
+      name: '微信',
+      type: 'wxpay',
+    },
+  },
+  {
+    name: 'Stripe',
+    template: {
+      color: 'rgba(var(--semi-green-5), 1)',
+      name: 'Stripe',
+      type: 'stripe',
+    },
+  },
+  {
+    name: 'Custom',
+    template: {
+      color: 'black',
+      min_topup: '50',
+      name: '自定义1',
+      type: 'custom1',
+    },
+  },
+]
 
 export function PaymentMethodsVisualEditor({
   value,
   onChange,
 }: PaymentMethodsVisualEditorProps) {
   const { t } = useTranslation()
-  const paymentTemplates = [
-    {
-      name: t('Epay Alipay'),
-      template: {
-        icon: getDefaultIconName('alipay'),
-        name: '支付宝',
-        type: 'alipay',
-      },
-    },
-    {
-      name: t('Epay WeChat Pay'),
-      template: {
-        icon: getDefaultIconName('wxpay'),
-        name: '微信',
-        type: 'wxpay',
-      },
-    },
-    {
-      name: t('Stripe'),
-      template: {
-        icon: getDefaultIconName('stripe'),
-        min_topup: '10',
-        name: 'Stripe',
-        type: 'stripe',
-      },
-    },
-    {
-      name: 'Waffo Pancake',
-      template: {
-        icon: getDefaultIconName('waffo_pancake'),
-        name: 'Waffo Pancake',
-        type: 'waffo_pancake',
-      },
-    },
-    {
-      name: t('Custom Epay method'),
-      template: {
-        icon: 'LuCreditCard',
-        min_topup: '50',
-        name: '自定义1',
-        type: 'custom1',
-      },
-    },
-  ]
   const [searchText, setSearchText] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editData, setEditData] = useState<PaymentMethodData | null>(null)
@@ -125,11 +102,10 @@ export function PaymentMethodsVisualEditor({
         item !== null &&
         'name' in item &&
         'type' in item &&
+        'color' in item &&
         typeof item.name === 'string' &&
         typeof item.type === 'string' &&
-        (!('icon' in item) || typeof item.icon === 'string') &&
-        (!('min_topup' in item) || typeof item.min_topup === 'string') &&
-        (!('color' in item) || typeof item.color === 'string')
+        typeof item.color === 'string'
     )
   }, [value])
 
@@ -139,8 +115,7 @@ export function PaymentMethodsVisualEditor({
     return paymentMethods.filter(
       (method) =>
         method.name.toLowerCase().includes(lowerSearch) ||
-        method.type.toLowerCase().includes(lowerSearch) ||
-        getEffectiveIconName(method).toLowerCase().includes(lowerSearch)
+        method.type.toLowerCase().includes(lowerSearch)
     )
   }, [paymentMethods, searchText])
 
@@ -231,6 +206,14 @@ export function PaymentMethodsVisualEditor({
     }
   }
 
+  const getColorPreview = (color: string) => {
+    // For CSS variables, show a placeholder
+    if (color.includes('var(--')) {
+      return null
+    }
+    return color
+  }
+
   return (
     <div className='space-y-4'>
       <div className='flex flex-col gap-3 sm:flex-row sm:items-center'>
@@ -256,10 +239,10 @@ export function PaymentMethodsVisualEditor({
             <PopoverContent className='w-60'>
               <div className='space-y-2'>
                 <p className='text-muted-foreground text-xs'>
-                  {t('Quick insert payment entries')}
+                  {t('Quick insert common payment methods')}
                 </p>
                 <div className='space-y-1'>
-                  {paymentTemplates.map((item) => (
+                  {PAYMENT_TEMPLATES.map((item) => (
                     <Button
                       key={item.name}
                       type='button'
@@ -318,7 +301,7 @@ export function PaymentMethodsVisualEditor({
               },
               {
                 id: 'type',
-                header: t('Payment type key'),
+                header: t('Type'),
                 cell: (method) => (
                   <code className='bg-muted rounded px-1.5 py-0.5 text-sm'>
                     {method.type}
@@ -326,24 +309,23 @@ export function PaymentMethodsVisualEditor({
                 ),
               },
               {
-                id: 'icon',
-                header: t('Icon'),
+                id: 'color',
+                header: t('Color'),
                 cell: (method) => {
-                  const iconName = getEffectiveIconName(method)
+                  const colorPreview = getColorPreview(method.color)
 
-                  return iconName ? (
+                  return (
                     <div className='flex items-center gap-2'>
-                      <ReactIconByName
-                        name={iconName}
-                        className='text-muted-foreground size-5 shrink-0'
-                        title={iconName}
-                      />
+                      {colorPreview && (
+                        <div
+                          className='size-5 shrink-0 rounded border'
+                          style={{ backgroundColor: colorPreview }}
+                        />
+                      )}
                       <span className='text-muted-foreground truncate font-mono text-sm'>
-                        {iconName}
+                        {method.color}
                       </span>
                     </div>
-                  ) : (
-                    <span className='text-muted-foreground text-sm'>—</span>
                   )
                 },
               },
@@ -430,22 +412,19 @@ export function PaymentMethodsVisualEditor({
                   <div className='space-y-2 text-sm'>
                     <div className='flex items-center gap-2'>
                       <span className='text-muted-foreground min-w-20'>
-                        {t('Icon')}
+                        {t('Color:')}
                       </span>
-                      {iconName ? (
-                        <div className='flex min-w-0 items-center gap-2'>
-                          <ReactIconByName
-                            name={iconName}
-                            className='text-muted-foreground size-5 shrink-0'
-                            title={iconName}
+                      <div className='flex items-center gap-2'>
+                        {colorPreview && (
+                          <div
+                            className='size-5 shrink-0 rounded border'
+                            style={{ backgroundColor: colorPreview }}
                           />
-                          <span className='text-muted-foreground truncate font-mono text-xs'>
-                            {iconName}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className='text-muted-foreground text-xs'>—</span>
-                      )}
+                        )}
+                        <span className='text-muted-foreground truncate font-mono text-xs'>
+                          {method.color}
+                        </span>
+                      </div>
                     </div>
                     {method.min_topup && (
                       <div className='flex items-center gap-2'>

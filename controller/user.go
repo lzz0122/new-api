@@ -97,43 +97,6 @@ func Login(c *gin.Context) {
 	setupLogin(&user, c)
 }
 
-// loginMethodFromContext 根据请求路径推导登录方式，用于登录审计日志。
-func loginMethodFromContext(c *gin.Context) string {
-	switch c.FullPath() {
-	case "/api/user/login":
-		return "password"
-	case "/api/user/login/2fa":
-		return "2fa"
-	case "/api/user/passkey/login/finish":
-		return "passkey"
-	case "/api/oauth/wechat":
-		return "wechat"
-	case "/api/oauth/telegram/login":
-		return "telegram"
-	case "/api/oauth/:provider":
-		if provider := c.Param("provider"); provider != "" {
-			return "oauth:" + provider
-		}
-		return "oauth"
-	default:
-		return "unknown"
-	}
-}
-
-// recordLoginAudit 记录登录成功审计日志（对所有用户启用，仅记录成功，不记录失败）。
-func recordLoginAudit(user *model.User, c *gin.Context) {
-	method := loginMethodFromContext(c)
-	ip := c.ClientIP()
-	extra := map[string]interface{}{
-		"login_method": method,
-		"user_agent":   c.Request.UserAgent(),
-	}
-	content := fmt.Sprintf("Logged in successfully via %s", method)
-	model.RecordLoginLog(user.Id, user.Username, content, ip, "login", map[string]interface{}{
-		"method": method,
-	}, extra)
-}
-
 // setup session & cookies and then return user info
 func setupLogin(user *model.User, c *gin.Context) {
 	model.UpdateUserLastLoginAt(user.Id)
@@ -148,7 +111,6 @@ func setupLogin(user *model.User, c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserSessionSaveFailed)
 		return
 	}
-	recordLoginAudit(user, c)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "",
 		"success": true,
@@ -560,6 +522,7 @@ func generateDefaultSidebarConfig(userRole int) string {
 		"detail":     true,
 		"token":      true,
 		"log":        true,
+		"carpool":    true,
 		"midjourney": true,
 		"task":       true,
 	}
@@ -751,10 +714,7 @@ func AdminClearUserBinding(c *gin.Context) {
 		return
 	}
 
-	recordManageAuditFor(c, user.Id, "user.binding_clear", map[string]interface{}{
-		"bindingType": bindingType,
-		"username":    user.Username,
-	})
+	model.RecordLog(user.Id, model.LogTypeManage, fmt.Sprintf("admin cleared %s binding for user %s", bindingType, user.Username))
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -920,10 +880,6 @@ func DeleteUser(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	recordManageAuditFor(c, originUser.Id, "user.delete", map[string]interface{}{
-		"username": originUser.Username,
-		"id":       originUser.Id,
-	})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -999,10 +955,6 @@ func CreateUser(c *gin.Context) {
 	}
 	cleanUser.FinishInsert(0)
 
-	recordManageAuditFor(c, cleanUser.Id, "user.create", map[string]interface{}{
-		"username": cleanUser.Username,
-		"role":     cleanUser.Role,
-	})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -1103,6 +1055,12 @@ func ManageUser(c *gin.Context) {
 		}
 		user.Role = common.RoleCommonUser
 	case "add_quota":
+		adminName := c.GetString("username")
+		adminId := c.GetInt("id")
+		adminInfo := map[string]interface{}{
+			"admin_id":       adminId,
+			"admin_username": adminName,
+		}
 		switch req.Mode {
 		case "add":
 			if req.Value <= 0 {
@@ -1113,9 +1071,8 @@ func ManageUser(c *gin.Context) {
 				common.ApiError(c, err)
 				return
 			}
-			recordManageAuditFor(c, user.Id, "user.quota_add", map[string]interface{}{
-				"quota": logger.LogQuota(req.Value),
-			})
+			model.RecordLogWithAdminInfo(user.Id, model.LogTypeManage,
+				fmt.Sprintf("管理员增加用户额度 %s", logger.LogQuota(req.Value)), adminInfo)
 		case "subtract":
 			if req.Value <= 0 {
 				common.ApiErrorI18n(c, i18n.MsgUserQuotaChangeZero)
@@ -1125,19 +1082,16 @@ func ManageUser(c *gin.Context) {
 				common.ApiError(c, err)
 				return
 			}
-			recordManageAuditFor(c, user.Id, "user.quota_subtract", map[string]interface{}{
-				"quota": logger.LogQuota(req.Value),
-			})
+			model.RecordLogWithAdminInfo(user.Id, model.LogTypeManage,
+				fmt.Sprintf("管理员减少用户额度 %s", logger.LogQuota(req.Value)), adminInfo)
 		case "override":
 			oldQuota := user.Quota
 			if err := model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("quota", req.Value).Error; err != nil {
 				common.ApiError(c, err)
 				return
 			}
-			recordManageAuditFor(c, user.Id, "user.quota_override", map[string]interface{}{
-				"from": logger.LogQuota(oldQuota),
-				"to":   logger.LogQuota(req.Value),
-			})
+			model.RecordLogWithAdminInfo(user.Id, model.LogTypeManage,
+				fmt.Sprintf("管理员覆盖用户额度从 %s 为 %s", logger.LogQuota(oldQuota), logger.LogQuota(req.Value)), adminInfo)
 		default:
 			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 			return
@@ -1185,11 +1139,6 @@ func ManageUser(c *gin.Context) {
 			common.SysLog(fmt.Sprintf("failed to invalidate tokens cache for user %d: %s", user.Id, err.Error()))
 		}
 	}
-	recordManageAuditFor(c, user.Id, "user.manage", map[string]interface{}{
-		"action":   req.Action,
-		"username": user.Username,
-		"id":       user.Id,
-	})
 	clearUser := model.User{
 		Role:   user.Role,
 		Status: user.Status,

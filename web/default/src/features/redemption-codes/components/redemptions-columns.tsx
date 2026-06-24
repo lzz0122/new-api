@@ -40,6 +40,7 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
   return [
     {
       id: 'select',
+      meta: { label: t('Select') },
       header: ({ table }) => (
         <Checkbox
           checked={table.getIsAllPageRowsSelected()}
@@ -63,8 +64,10 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
     },
     {
       accessorKey: 'id',
-      header: t('ID'),
-      meta: { mobileHidden: true },
+      meta: { label: t('ID'), mobileHidden: true },
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('ID')} />
+      ),
       cell: ({ row }) => {
         return (
           <TableId value={row.getValue('id') as number} className='w-[60px]' />
@@ -74,17 +77,25 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
     },
     {
       accessorKey: 'name',
-      header: t('Name'),
-      meta: { mobileTitle: true },
-      cell: ({ row }) => (
-        <span className='font-medium'>{row.getValue('name')}</span>
+      meta: { label: t('Name'), mobileTitle: true },
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Name')} />
       ),
+      cell: ({ row }) => {
+        return (
+          <div className='max-w-[150px] truncate font-medium'>
+            {row.getValue('name')}
+          </div>
+        )
+      },
       size: 180,
     },
     {
       accessorKey: 'status',
-      header: t('Status'),
-      meta: { mobileBadge: true },
+      meta: { label: t('Status'), mobileBadge: true },
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Status')} />
+      ),
       cell: ({ row }) => {
         const redemption = row.original
         const statusValue = row.getValue('status') as number
@@ -96,7 +107,6 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
               label={t('Expired')}
               variant='warning'
               copyable={false}
-              className='-ml-1.5'
             />
           )
         }
@@ -112,7 +122,6 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
             label={t(statusConfig.labelKey)}
             variant={statusConfig.variant}
             copyable={false}
-            className='-ml-1.5'
           />
         )
       },
@@ -135,7 +144,10 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
     {
       id: 'code',
       accessorKey: 'key',
-      header: t('Code'),
+      meta: { label: t('Code') },
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Code')} />
+      ),
       cell: function CodeCell({ row }) {
         const redemption = row.original
         const key = redemption.key
@@ -156,7 +168,10 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
     },
     {
       accessorKey: 'quota',
-      header: t('Quota'),
+      meta: { label: t('Quota') },
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Quota')} />
+      ),
       cell: ({ row }) => {
         const quota = row.getValue('quota') as number
         return (
@@ -164,7 +179,6 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
             label={formatQuota(quota)}
             variant='neutral'
             copyable={false}
-            className='-ml-1.5'
           />
         )
       },
@@ -172,8 +186,10 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
     },
     {
       accessorKey: 'created_time',
-      header: t('Created'),
-      meta: { mobileHidden: true },
+      meta: { label: t('Created'), mobileHidden: true },
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Created')} />
+      ),
       cell: ({ row }) => {
         return (
           <div className='min-w-[160px] font-mono text-sm'>
@@ -185,8 +201,10 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
     },
     {
       accessorKey: 'expired_time',
-      header: t('Expires'),
-      meta: { mobileHidden: true },
+      meta: { label: t('Expires'), mobileHidden: true },
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Expires')} />
+      ),
       cell: ({ row }) => {
         const expiredTime = row.getValue('expired_time') as number
         if (expiredTime === 0) {
@@ -195,7 +213,6 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
               label={t('Never')}
               variant='neutral'
               copyable={false}
-              className='-ml-1.5'
             />
           )
         }
@@ -212,8 +229,10 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
     },
     {
       accessorKey: 'used_user_id',
-      header: t('Redeemed By'),
-      meta: { mobileHidden: true },
+      meta: { label: t('Redeemed By'), mobileHidden: true },
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Redeemed By')} />
+      ),
       cell: ({ row }) => {
         const userId = row.getValue('used_user_id') as number
         const redemption = row.original
@@ -254,7 +273,6 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
     },
     {
       id: 'actions',
-      header: () => t('Actions'),
       cell: ({ row }) => <DataTableRowActions row={row} />,
       meta: { pinned: 'right' as const },
     },

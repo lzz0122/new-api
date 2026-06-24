@@ -48,7 +48,6 @@ export type PerfModelSummary = {
   avg_latency_ms: number
   success_rate: number
   avg_tps: number
-  recent_success_rates?: number[]
   request_count?: number
 }
 

@@ -53,7 +53,7 @@ export function TwoFACard({ loading: pageLoading }: TwoFACardProps) {
 
   if (pageLoading || loading) {
     return (
-      <Card data-card-hover='false' className='gap-0 overflow-hidden py-0'>
+      <Card className='gap-0 overflow-hidden py-0'>
         <CardHeader className='p-3 sm:p-5'>
           <Skeleton className='h-6 w-48' />
           <Skeleton className='mt-2 h-4 w-64' />
@@ -67,7 +67,7 @@ export function TwoFACard({ loading: pageLoading }: TwoFACardProps) {
 
   return (
     <>
-      <Card data-card-hover='false' className='gap-0 overflow-hidden py-0'>
+      <Card className='gap-0 overflow-hidden py-0'>
         <CardHeader className='p-3 sm:p-5'>
           <CardTitle className='text-lg tracking-tight sm:text-xl'>
             {t('Two-Factor Authentication')}

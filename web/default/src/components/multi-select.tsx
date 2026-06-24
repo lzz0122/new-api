@@ -122,7 +122,6 @@ export function MultiSelect(props: MultiSelectProps) {
 
   const [inputValue, setInputValue] = React.useState('')
   const [open, setOpen] = React.useState(false)
-  const [expanded, setExpanded] = React.useState(false)
 
   const selectedSet = React.useMemo(
     () => new Set(props.selected),
@@ -209,25 +208,6 @@ export function MultiSelect(props: MultiSelectProps) {
     }
   }
 
-  const handleCopyChip = React.useCallback(
-    async (
-      event: React.MouseEvent<HTMLButtonElement>,
-      value: string,
-      label: string
-    ) => {
-      // Prevent the click from toggling the combobox popup or focusing input.
-      event.preventDefault()
-      event.stopPropagation()
-      const ok = await copyToClipboard(value)
-      if (ok) {
-        toast.success(t('Copied: {{model}}', { model: label }))
-      } else {
-        toast.error(t('Failed to copy'))
-      }
-    },
-    [t]
-  )
-
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     // Enter without a highlighted option commits the typed value.
     if (event.key === 'Enter' && props.allowCreate && canCreate) {
@@ -281,60 +261,18 @@ export function MultiSelect(props: MultiSelectProps) {
 
             return (
               <>
-                {visibleValues.map((value) => {
-                  const label = labelMap.get(value) ?? value
-                  return (
-                    <ComboboxChip key={value}>
-                      {props.copyChipOnClick ? (
-                        <button
-                          type='button'
-                          onClick={(event) =>
-                            handleCopyChip(event, value, label)
-                          }
-                          onPointerDown={(event) => event.stopPropagation()}
-                          title={t('Click to copy')}
-                          className='max-w-[16rem] cursor-pointer truncate rounded-sm hover:underline'
-                        >
-                          {label}
-                        </button>
-                      ) : (
-                        <span className='max-w-[16rem] truncate'>{label}</span>
-                      )}
-                    </ComboboxChip>
-                  )
-                })}
+                {visibleValues.map((value) => (
+                  <ComboboxChip key={value}>
+                    <span className='max-w-[16rem] truncate'>
+                      {labelMap.get(value) ?? value}
+                    </span>
+                  </ComboboxChip>
+                ))}
                 {hiddenCount > 0 && (
-                  <button
-                    type='button'
-                    onClick={(event) => {
-                      event.preventDefault()
-                      event.stopPropagation()
-                      setExpanded(true)
-                    }}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    title={t('Show All')}
-                    className='bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground flex h-[calc(--spacing(5.25))] w-fit cursor-pointer items-center justify-center rounded-sm px-1.5 text-xs font-medium whitespace-nowrap transition-colors'
-                  >
+                  <span className='bg-muted text-muted-foreground flex h-[calc(--spacing(5.25))] w-fit items-center justify-center rounded-sm px-1.5 text-xs font-medium whitespace-nowrap'>
                     {t('+{{count}} more', { count: hiddenCount })}
-                  </button>
+                  </span>
                 )}
-                {expanded &&
-                  typeof props.maxVisibleChips === 'number' &&
-                  values.length > props.maxVisibleChips && (
-                    <button
-                      type='button'
-                      onClick={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        setExpanded(false)
-                      }}
-                      onPointerDown={(event) => event.stopPropagation()}
-                      title={t('Collapse')}
-                      className='bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground flex h-[calc(--spacing(5.25))] w-fit cursor-pointer items-center justify-center rounded-sm px-1.5 text-xs font-medium whitespace-nowrap transition-colors'
-                    >
-                      {t('Collapse')}
-                    </button>
-                  )}
               </>
             )
           }}

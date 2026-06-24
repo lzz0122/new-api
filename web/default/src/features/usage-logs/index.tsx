@@ -37,13 +37,17 @@ import {
   USAGE_LOGS_DEFAULT_SECTION,
   type UsageLogsSectionId,
 } from './section-registry'
+import type { LogCategory } from './types'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
-const TASK_LOG_SECTIONS = ['drawing', 'task'] as const
+const SECONDARY_SECTIONS = ['carpool', 'drawing', 'task'] as const
 
 const SECTION_META: Record<UsageLogsSectionId, { titleKey: string }> = {
   common: {
     titleKey: 'Common Logs',
+  },
+  carpool: {
+    titleKey: 'Carpool Stats',
   },
   drawing: {
     titleKey: 'Drawing Logs',
@@ -72,8 +76,8 @@ function UsageLogsContent() {
   const tabNavGroups = useMemo<NavGroup[]>(
     () => [
       {
-        title: 'Task Logs',
-        items: TASK_LOG_SECTIONS.map((section) => ({
+        title: 'Usage Logs',
+        items: SECONDARY_SECTIONS.map((section) => ({
           title: SECTION_META[section].titleKey,
           url: `/usage-logs/${section}`,
         })),
@@ -105,10 +109,15 @@ function UsageLogsContent() {
     [navigate]
   )
 
-  const pageMeta =
-    activeCategory === 'common' ? SECTION_META.common : SECTION_META.task
+  const pageMeta = SECTION_META[activeCategory]
   const showTaskSwitcher =
     activeCategory !== 'common' && visibleSections.length > 1
+  const tableCategory =
+    activeCategory === 'common' ||
+    activeCategory === 'drawing' ||
+    activeCategory === 'task'
+      ? (activeCategory as LogCategory)
+      : null
 
   return (
     <>
@@ -130,7 +139,11 @@ function UsageLogsContent() {
               </Tabs>
             )}
             <div className='min-h-0 flex-1'>
-              <UsageLogsTable logCategory={activeCategory} />
+              {activeCategory === 'carpool' ? (
+                <CarpoolStatsPage />
+              ) : (
+                tableCategory && <UsageLogsTable logCategory={tableCategory} />
+              )}
             </div>
           </div>
         </SectionPageLayout.Content>

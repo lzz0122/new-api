@@ -105,6 +105,22 @@ function parseIonetMeta(otherInfo: string | null | undefined): null | {
 }
 
 /**
+ * Render limited items with "and X more" indicator
+ */
+function renderLimitedItems(
+  items: React.ReactNode[],
+  maxDisplay: number = 2
+): React.ReactNode {
+  return (
+    <StatusBadgeList
+      items={items}
+      max={maxDisplay}
+      renderItem={(item) => item}
+    />
+  )
+}
+
+/**
  * Upstream update tags (+N / -N) shown on channel name for model-fetchable channels
  */
 function UpstreamUpdateTags({ channel }: { channel: Channel }) {
@@ -435,7 +451,7 @@ function BalanceCell({ channel }: { channel: Channel }) {
 
   return (
     <TooltipProvider>
-      <div className='-ml-1.5 flex items-center gap-1'>
+      <div className='flex items-center gap-1'>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -1078,7 +1094,6 @@ export function useChannelsColumns(
               variant={config.variant}
               size='sm'
               copyable={false}
-              className='-ml-1.5'
             />
           )
         },

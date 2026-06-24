@@ -12,6 +12,7 @@ import (
 	"time"
 
 	common2 "github.com/QuantumNous/new-api/common"
+	appconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
@@ -474,6 +475,27 @@ func sendPingData(c *gin.Context, mutex *sync.Mutex) error {
 func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
 	return doRequest(c, req, info)
 }
+
+func clientWithResponseHeaderTimeout(client *http.Client, timeoutSeconds int) *http.Client {
+	if client == nil || timeoutSeconds <= 0 {
+		return client
+	}
+	cloned := *client
+	timeout := time.Duration(timeoutSeconds) * time.Second
+	if transport, ok := client.Transport.(*http.Transport); ok && transport != nil {
+		transportClone := transport.Clone()
+		transportClone.ResponseHeaderTimeout = timeout
+		cloned.Transport = transportClone
+	} else if client.Transport == nil {
+		if transport, ok := http.DefaultTransport.(*http.Transport); ok && transport != nil {
+			transportClone := transport.Clone()
+			transportClone.ResponseHeaderTimeout = timeout
+			cloned.Transport = transportClone
+		}
+	}
+	return &cloned
+}
+
 func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
 	var client *http.Client
 	var err error
@@ -485,6 +507,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	} else {
 		client = service.GetHttpClient()
 	}
+	client = clientWithResponseHeaderTimeout(client, common2.GetContextKeyInt(c, appconstant.ContextKeyTokenGroupTimeout))
 
 	var stopPinger context.CancelFunc
 	var pingerDone <-chan struct{}

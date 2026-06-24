@@ -71,7 +71,6 @@ function parsePaymentMethods(
         name: typeof item.name === 'string' ? item.name : '',
         type,
         color: typeof item.color === 'string' ? item.color : undefined,
-        icon: typeof item.icon === 'string' ? item.icon : undefined,
         min_topup:
           type === 'stripe' && normalizedMinTopup <= 0
             ? stripeMinTopup
@@ -168,7 +167,7 @@ export function useTopupInfo() {
   const [presetAmounts, setPresetAmounts] = useState<PresetAmount[]>([])
   const [loading, setLoading] = useState(true)
 
-  const fetchTopupInfo = useCallback(async () => {
+  const fetchTopupInfo = async () => {
     try {
       setLoading(true)
 
@@ -213,19 +212,11 @@ export function useTopupInfo() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }
 
   useEffect(() => {
-    let cancelled = false
-
-    queueMicrotask(() => {
-      if (!cancelled) void fetchTopupInfo()
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [fetchTopupInfo])
+    fetchTopupInfo()
+  }, [])
 
   return {
     topupInfo,

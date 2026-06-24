@@ -11,16 +11,12 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
 var group2model2channels map[string]map[string][]int // enabled channel
 var channelsIDM map[int]*Channel                     // all channels include disabled
-// channel2advancedCustomConfig caches parsed Advanced Custom (type 58) configs so
-// path-aware selection avoids re-parsing JSON per request. Refreshed on full sync.
-var channel2advancedCustomConfig map[int]*dto.AdvancedCustomConfig
 var channelSyncLock sync.RWMutex
 
 func InitChannelCache() {
@@ -28,16 +24,10 @@ func InitChannelCache() {
 		return
 	}
 	newChannelId2channel := make(map[int]*Channel)
-	newChannel2advancedCustomConfig := make(map[int]*dto.AdvancedCustomConfig)
 	var channels []*Channel
 	DB.Find(&channels)
 	for _, channel := range channels {
 		newChannelId2channel[channel.Id] = channel
-		if channel.Type == constant.ChannelTypeAdvancedCustom {
-			if config := channel.GetOtherSettings().AdvancedCustom; config != nil {
-				newChannel2advancedCustomConfig[channel.Id] = config
-			}
-		}
 	}
 	var abilities []*Ability
 	DB.Find(&abilities)
@@ -92,7 +82,6 @@ func InitChannelCache() {
 		}
 	}
 	channelsIDM = newChannelId2channel
-	channel2advancedCustomConfig = newChannel2advancedCustomConfig
 	channelSyncLock.Unlock()
 	common.SysLog("channels synced from database")
 }
@@ -105,22 +94,22 @@ func SyncChannelCache(frequency int) {
 	}
 }
 
-func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry, requestPath)
+		return GetChannel(group, model, retry)
 	}
 
 	channelSyncLock.RLock()
 	defer channelSyncLock.RUnlock()
 
 	// First, try to find channels with the exact model name.
-	channels := filterChannelsByRequestPath(group2model2channels[group][model], requestPath)
+	channels := group2model2channels[group][model]
 
 	// If no channels found, try to find channels with the normalized model name.
 	if len(channels) == 0 {
 		normalizedModel := ratio_setting.FormatMatchingModelName(model)
-		channels = filterChannelsByRequestPath(group2model2channels[group][normalizedModel], requestPath)
+		channels = group2model2channels[group][normalizedModel]
 	}
 
 	if len(channels) == 0 {
@@ -202,32 +191,216 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 	return nil, errors.New("channel not found")
 }
 
-// filterChannelsByRequestPath restricts candidates by request path. Only Advanced
-// Custom (type 58) channels are path-checked: they are kept only when one of their
-// configured routes matches requestPath. All other channel types always pass.
-// When requestPath is empty (non-relay callers) filtering is skipped.
-// Caller must hold channelSyncLock (read lock). The cached slice is never mutated.
-func filterChannelsByRequestPath(channels []int, requestPath string) []int {
-	if requestPath == "" || len(channels) == 0 {
-		return channels
+func GetRandomSatisfiedChannelExcluding(group string, model string, retry int, excludedIDs map[int]struct{}) (*Channel, error) {
+	if len(excludedIDs) == 0 {
+		return GetRandomSatisfiedChannel(group, model, retry)
 	}
-	filtered := make([]int, 0, len(channels))
-	for _, channelId := range channels {
-		channel, ok := channelsIDM[channelId]
+	channels, err := GetSatisfiedChannels(group, model)
+	if err != nil || len(channels) == 0 {
+		return nil, err
+	}
+	filtered := make([]*Channel, 0, len(channels))
+	for _, channel := range channels {
+		if _, excluded := excludedIDs[channel.Id]; excluded {
+			continue
+		}
+		filtered = append(filtered, channel)
+	}
+	if len(filtered) == 0 {
+		return nil, nil
+	}
+	return getRandomChannelFromCandidates(filtered, retry)
+}
+
+func GetSatisfiedChannels(group string, model string) ([]*Channel, error) {
+	if !common.MemoryCacheEnabled {
+		return getSatisfiedChannelsFromDB(group, model)
+	}
+
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+
+	channelIDs := group2model2channels[group][model]
+	if len(channelIDs) == 0 {
+		normalizedModel := ratio_setting.FormatMatchingModelName(model)
+		channelIDs = group2model2channels[group][normalizedModel]
+	}
+	if len(channelIDs) == 0 {
+		return nil, nil
+	}
+
+	channels := make([]*Channel, 0, len(channelIDs))
+	for _, channelID := range channelIDs {
+		channel, ok := channelsIDM[channelID]
 		if !ok {
-			// keep it so the downstream consistency error is raised as before
-			filtered = append(filtered, channelId)
-			continue
+			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelID)
 		}
-		if channel.Type != constant.ChannelTypeAdvancedCustom {
-			filtered = append(filtered, channelId)
-			continue
-		}
-		if config := channel2advancedCustomConfig[channelId]; config != nil && config.SupportsPath(requestPath) {
-			filtered = append(filtered, channelId)
+		channels = append(channels, channel)
+	}
+	return channels, nil
+}
+
+func GetRandomSatisfiedChannelFromIDs(group string, model string, retry int, preferredIDs []int) (*Channel, error) {
+	if len(preferredIDs) == 0 {
+		return nil, nil
+	}
+	preferred := make(map[int]struct{}, len(preferredIDs))
+	for _, id := range preferredIDs {
+		preferred[id] = struct{}{}
+	}
+	channels, err := GetSatisfiedChannels(group, model)
+	if err != nil || len(channels) == 0 {
+		return nil, err
+	}
+	filtered := make([]*Channel, 0, len(channels))
+	for _, channel := range channels {
+		if _, ok := preferred[channel.Id]; ok {
+			filtered = append(filtered, channel)
 		}
 	}
-	return filtered
+	if len(filtered) == 0 {
+		return nil, nil
+	}
+	return getRandomChannelFromCandidates(filtered, retry)
+}
+
+func GetRandomSatisfiedChannelFromIDsExcluding(group string, model string, retry int, preferredIDs []int, excludedIDs map[int]struct{}) (*Channel, error) {
+	if len(excludedIDs) == 0 {
+		return GetRandomSatisfiedChannelFromIDs(group, model, retry, preferredIDs)
+	}
+	if len(preferredIDs) == 0 {
+		return nil, nil
+	}
+	preferred := make(map[int]struct{}, len(preferredIDs))
+	for _, id := range preferredIDs {
+		preferred[id] = struct{}{}
+	}
+	channels, err := GetSatisfiedChannels(group, model)
+	if err != nil || len(channels) == 0 {
+		return nil, err
+	}
+	filtered := make([]*Channel, 0, len(channels))
+	for _, channel := range channels {
+		if _, ok := preferred[channel.Id]; !ok {
+			continue
+		}
+		if _, excluded := excludedIDs[channel.Id]; excluded {
+			continue
+		}
+		filtered = append(filtered, channel)
+	}
+	if len(filtered) == 0 {
+		return nil, nil
+	}
+	return getRandomChannelFromCandidates(filtered, retry)
+}
+
+func getSatisfiedChannelsFromDB(group string, modelName string) ([]*Channel, error) {
+	abilities, err := getSatisfiedAbilities(group, modelName)
+	if err != nil || len(abilities) == 0 {
+		return nil, err
+	}
+	channelIDs := make([]int, 0, len(abilities))
+	seen := make(map[int]struct{}, len(abilities))
+	for _, ability := range abilities {
+		if _, ok := seen[ability.ChannelId]; ok {
+			continue
+		}
+		seen[ability.ChannelId] = struct{}{}
+		channelIDs = append(channelIDs, ability.ChannelId)
+	}
+	channelsByID := make(map[int]*Channel, len(channelIDs))
+	var channels []*Channel
+	if err := DB.Where("id IN ?", channelIDs).Find(&channels).Error; err != nil {
+		return nil, err
+	}
+	for _, channel := range channels {
+		channelsByID[channel.Id] = channel
+	}
+	ordered := make([]*Channel, 0, len(channelIDs))
+	for _, id := range channelIDs {
+		channel, ok := channelsByID[id]
+		if !ok {
+			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", id)
+		}
+		ordered = append(ordered, channel)
+	}
+	return ordered, nil
+}
+
+func getSatisfiedAbilities(group string, modelName string) ([]Ability, error) {
+	var abilities []Ability
+	query := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, modelName, true).
+		Order("priority DESC").Order("weight DESC")
+	if err := query.Find(&abilities).Error; err != nil {
+		return nil, err
+	}
+	if len(abilities) > 0 {
+		return abilities, nil
+	}
+	normalizedModel := ratio_setting.FormatMatchingModelName(modelName)
+	if normalizedModel == modelName {
+		return abilities, nil
+	}
+	query = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, normalizedModel, true).
+		Order("priority DESC").Order("weight DESC")
+	if err := query.Find(&abilities).Error; err != nil {
+		return nil, err
+	}
+	return abilities, nil
+}
+
+func getRandomChannelFromCandidates(candidates []*Channel, retry int) (*Channel, error) {
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	if len(candidates) == 1 {
+		return candidates[0], nil
+	}
+	uniquePriorities := make(map[int]bool)
+	for _, channel := range candidates {
+		uniquePriorities[int(channel.GetPriority())] = true
+	}
+	var sortedUniquePriorities []int
+	for priority := range uniquePriorities {
+		sortedUniquePriorities = append(sortedUniquePriorities, priority)
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(sortedUniquePriorities)))
+
+	if retry >= len(uniquePriorities) {
+		retry = len(uniquePriorities) - 1
+	}
+	targetPriority := int64(sortedUniquePriorities[retry])
+
+	var sumWeight int
+	var targetChannels []*Channel
+	for _, channel := range candidates {
+		if channel.GetPriority() == targetPriority {
+			sumWeight += channel.GetWeight()
+			targetChannels = append(targetChannels, channel)
+		}
+	}
+	if len(targetChannels) == 0 {
+		return nil, errors.New(fmt.Sprintf("no channel found, priority: %d", targetPriority))
+	}
+
+	smoothingFactor := 1
+	smoothingAdjustment := 0
+	if sumWeight == 0 {
+		sumWeight = len(targetChannels) * 100
+		smoothingAdjustment = 100
+	} else if sumWeight/len(targetChannels) < 10 {
+		smoothingFactor = 100
+	}
+	totalWeight := sumWeight * smoothingFactor
+	randomWeight := rand.Intn(totalWeight)
+	for _, channel := range targetChannels {
+		randomWeight -= channel.GetWeight()*smoothingFactor + smoothingAdjustment
+		if randomWeight < 0 {
+			return channel, nil
+		}
+	}
+	return nil, errors.New("channel not found")
 }
 
 func CacheGetChannel(id int) (*Channel, error) {

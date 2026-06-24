@@ -412,6 +412,7 @@ func GetChannel(c *gin.Context) {
 // GetChannelKey 获取渠道密钥（需要通过安全验证中间件）
 // 此函数依赖 SecureVerificationRequired 中间件，确保用户已通过安全验证
 func GetChannelKey(c *gin.Context) {
+	userId := c.GetInt("id")
 	channelId, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		common.ApiError(c, fmt.Errorf("渠道ID格式错误: %v", err))
@@ -430,11 +431,8 @@ func GetChannelKey(c *gin.Context) {
 		return
 	}
 
-	// 记录操作审计日志（高危：查看渠道密钥）
-	recordManageAudit(c, "channel.key_view", map[string]interface{}{
-		"id":   channelId,
-		"name": channel.Name,
-	})
+	// 记录操作日志
+	model.RecordLog(userId, model.LogTypeSystem, fmt.Sprintf("查看渠道密钥信息 (渠道ID: %d)", channelId))
 
 	// 返回渠道密钥
 	c.JSON(http.StatusOK, gin.H{
@@ -687,11 +685,6 @@ func AddChannel(c *gin.Context) {
 		return
 	}
 	service.ResetProxyClientCache()
-	recordManageAudit(c, "channel.create", map[string]interface{}{
-		"name":  addChannelRequest.Channel.Name,
-		"type":  addChannelRequest.Channel.Type,
-		"count": len(channels),
-	})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -701,10 +694,6 @@ func AddChannel(c *gin.Context) {
 
 func DeleteChannel(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	channelName := ""
-	if existing, err := model.GetChannelById(id, false); err == nil && existing != nil {
-		channelName = existing.Name
-	}
 	channel := model.Channel{Id: id}
 	err := channel.Delete()
 	if err != nil {
@@ -712,10 +701,6 @@ func DeleteChannel(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	recordManageAudit(c, "channel.delete", map[string]interface{}{
-		"id":   id,
-		"name": channelName,
-	})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -730,9 +715,6 @@ func DeleteDisabledChannel(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	recordManageAudit(c, "channel.delete_disabled", map[string]interface{}{
-		"count": rows,
-	})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -769,9 +751,6 @@ func DisableTagChannels(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	recordManageAudit(c, "channel.tag_disable", map[string]interface{}{
-		"tag": channelTag.Tag,
-	})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -795,9 +774,6 @@ func EnableTagChannels(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	recordManageAudit(c, "channel.tag_enable", map[string]interface{}{
-		"tag": channelTag.Tag,
-	})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -855,9 +831,6 @@ func EditTagChannels(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	recordManageAudit(c, "channel.tag_edit", map[string]interface{}{
-		"tag": channelTag.Tag,
-	})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -886,9 +859,6 @@ func DeleteChannelBatch(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	recordManageAudit(c, "channel.delete_batch", map[string]interface{}{
-		"count": len(channelBatch.Ids),
-	})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -1292,9 +1262,6 @@ func BatchSetChannelTag(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	recordManageAudit(c, "channel.tag_batch_set", map[string]interface{}{
-		"count": len(channelBatch.Ids),
-	})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -1392,11 +1359,6 @@ func CopyChannel(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	recordManageAudit(c, "channel.copy", map[string]interface{}{
-		"sourceId": id,
-		"id":       clone.Id,
-		"name":     clone.Name,
-	})
 	// success
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{"id": clone.Id}})
 }
@@ -1461,16 +1423,6 @@ func ManageMultiKeys(c *gin.Context) {
 		!authz.Can(c.GetInt("id"), c.GetInt("role"), authz.ChannelSensitiveWrite) {
 		common.ApiErrorI18n(c, i18n.MsgAuthInsufficientPrivilege)
 		return
-	}
-
-	// get_key_status 为只读查询，不记录审计；其余为修改操作，记录审计并跳过中间件兜底。
-	if request.Action == "get_key_status" {
-		markAuditLogged(c)
-	} else {
-		recordManageAudit(c, "channel.multi_key_manage", map[string]interface{}{
-			"action": request.Action,
-			"id":     channel.Id,
-		})
 	}
 
 	lock := model.GetChannelPollingLock(channel.Id)

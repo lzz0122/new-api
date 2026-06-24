@@ -87,33 +87,28 @@ export function ProviderTable(props: ProviderTableProps) {
             id: 'slug',
             header: t('Slug'),
             cell: (provider) => (
-              <BadgeCell>
-                <StatusBadge
-                  label={provider.slug}
-                  variant='neutral'
-                  copyable={false}
-                />
-              </BadgeCell>
+              <StatusBadge
+                label={provider.slug}
+                variant='neutral'
+                copyable={false}
+              />
             ),
           },
           {
             id: 'status',
             header: t('Status'),
             cell: (provider) => (
-              <BadgeCell>
-                <StatusBadge
-                  label={provider.enabled ? t('Enabled') : t('Disabled')}
-                  variant={provider.enabled ? 'success' : 'neutral'}
-                  copyable={false}
-                />
-              </BadgeCell>
+              <StatusBadge
+                label={provider.enabled ? t('Enabled') : t('Disabled')}
+                variant={provider.enabled ? 'success' : 'neutral'}
+                copyable={false}
+              />
             ),
           },
           {
             id: 'client-id',
             header: t('Client ID'),
-            cellClassName:
-              'text-muted-foreground max-w-[120px] truncate font-mono',
+            cellClassName: 'text-muted-foreground max-w-[120px] truncate font-mono',
             cell: (provider) => provider.client_id,
           },
           {

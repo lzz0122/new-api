@@ -36,6 +36,7 @@ import {
   Eraser,
   Plus,
   Eye,
+  Link2,
   RefreshCw,
   Code,
   Route,
@@ -147,10 +148,8 @@ import {
 import { useChannelMutateForm } from '../../hooks/use-channel-mutate-form'
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
-  CHANNEL_TYPE_ADVANCED_CUSTOM,
   channelFormSchema,
   channelsQueryKeys,
-  getAdvancedCustomStats,
   transformChannelToFormDefaults,
   type ChannelFormValues,
   deduplicateKeys,
@@ -171,7 +170,7 @@ import {
 } from '../../lib/status-code-risk-guard'
 import type { Channel } from '../../types'
 import { useChannels } from '../channels-provider'
-import { AdvancedCustomEditorDialog } from '../dialogs/advanced-custom-editor-dialog'
+import { CodexOAuthDialog } from '../dialogs/codex-oauth-dialog'
 import { FetchModelsDialog } from '../dialogs/fetch-models-dialog'
 import {
   MissingModelsConfirmationDialog,
@@ -602,6 +601,7 @@ export function ChannelMutateDrawer({
   const [fetchModelsDialogOpen, setFetchModelsDialogOpen] = useState(false)
   const [channelKey, setChannelKey] = useState<string | null>(null)
   const [isChannelKeyLoading, setIsChannelKeyLoading] = useState(false)
+  const [codexOAuthDialogOpen, setCodexOAuthDialogOpen] = useState(false)
   const [isCodexCredentialRefreshing, setIsCodexCredentialRefreshing] =
     useState(false)
   const initialModelsRef = useRef<string[]>([])
@@ -709,7 +709,6 @@ export function ChannelMutateDrawer({
   const currentName = form.watch('name')
   const currentModelMapping = form.watch('model_mapping')
   const awsKeyType = form.watch('aws_key_type')
-  const vertexKeyType = form.watch('vertex_key_type')
   const upstreamModelUpdateCheckEnabled = form.watch(
     'upstream_model_update_check_enabled'
   )
@@ -1260,25 +1259,6 @@ export function ChannelMutateDrawer({
       }
     }
   }, [currentType, isEditing, form])
-
-  useEffect(() => {
-    if (currentType !== 45 || currentBaseUrl !== 'doubao-coding-plan') return
-
-    form.setValue('base_url', 'https://ark.cn-beijing.volces.com', {
-      shouldDirty: false,
-      shouldValidate: true,
-    })
-  }, [currentBaseUrl, currentType, form])
-
-  useEffect(() => {
-    if (isEditing || supportsMultiKeyAddMode) return
-    if (multiKeyMode && multiKeyMode !== 'single') {
-      form.setValue('multi_key_mode', 'single', {
-        shouldDirty: true,
-        shouldValidate: true,
-      })
-    }
-  }, [form, isEditing, multiKeyMode, supportsMultiKeyAddMode])
 
   // Validate base_url - warn if it ends with /v1
   useEffect(() => {

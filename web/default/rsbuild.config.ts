@@ -13,6 +13,11 @@ export default defineConfig(({ envMode }) => {
   const serverUrl =
     process.env.VITE_REACT_APP_SERVER_URL ||
     env.rawPublicVars.VITE_REACT_APP_SERVER_URL ||
+    ''
+  const proxyServerUrl =
+    process.env.VITE_REACT_APP_PROXY_URL ||
+    env.rawPublicVars.VITE_REACT_APP_PROXY_URL ||
+    serverUrl ||
     'http://localhost:3000'
 
   const isProd = envMode === 'production'
@@ -56,6 +61,9 @@ export default defineConfig(({ envMode }) => {
       entry: {
         index: './src/main.tsx',
       },
+      define: {
+        'import.meta.env.VITE_REACT_APP_SERVER_URL': JSON.stringify(serverUrl),
+      },
     },
     resolve: {
       alias: {
@@ -67,7 +75,7 @@ export default defineConfig(({ envMode }) => {
     },
     server: {
       host: '0.0.0.0',
-      strictPort: false,
+      strictPort: true,
       proxy: devProxy,
     },
     output: {

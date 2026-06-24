@@ -241,30 +241,11 @@ export function buildAssertionResult(
  */
 export async function isPasskeySupported(): Promise<boolean> {
   if (typeof window === 'undefined') return false
+  if (!window.isSecureContext) return false
   const { PublicKeyCredential } = window
   if (!PublicKeyCredential) return false
-
-  if (
-    typeof PublicKeyCredential.isConditionalMediationAvailable === 'function'
-  ) {
-    try {
-      const available =
-        await PublicKeyCredential.isConditionalMediationAvailable()
-      if (available) return true
-    } catch {
-      // ignore
-    }
-  }
-
-  if (
-    typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable ===
-    'function'
-  ) {
-    try {
-      return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-    } catch {
-      return false
-    }
+  if (!navigator.credentials?.create || !navigator.credentials?.get) {
+    return false
   }
 
   return true

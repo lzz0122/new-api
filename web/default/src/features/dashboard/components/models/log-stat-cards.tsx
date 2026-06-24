@@ -42,23 +42,7 @@ interface LogStatCardsProps {
   onDataUpdate?: (data: QuotaDataItem[], loading: boolean) => void
 }
 
-const MAX_INLINE_STAT_CHARS = 9
-
-function formatStatNumber(value: number, locale: Intl.LocalesArgument) {
-  const fullValue = formatNumber(value, locale)
-  const displayValue =
-    fullValue.length > MAX_INLINE_STAT_CHARS
-      ? formatCompactNumber(value, locale)
-      : fullValue
-
-  return {
-    displayValue,
-    fullValue,
-  }
-}
-
 export function LogStatCards(props: LogStatCardsProps) {
-  const { i18n } = useTranslation()
   const statCardsConfig = useModelStatCardsConfig()
   const user = useAuthStore((state) => state.auth.user)
   const isAdmin = !!(user?.role && user.role >= 10)
@@ -125,37 +109,23 @@ export function LogStatCards(props: LogStatCardsProps) {
     const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
     const formatted =
       config.key === 'quota'
-        ? {
-            displayValue: formatQuota(rawValue),
-            fullValue: formatQuota(rawValue),
-          }
-        : formatStatNumber(rawValue, locale)
-
-    return {
-      title: config.title,
-      value: formatted.displayValue,
-      fullValue: formatted.fullValue,
-      desc: config.description,
-      icon: config.icon,
-    }
-  })
+        ? formatQuota(config.getValue(adaptedStats, timeRangeMinutes))
+        : formatNumber(config.getValue(adaptedStats, timeRangeMinutes)),
+    desc: config.description,
+    icon: config.icon,
+  }))
 
   return (
     <div className='overflow-hidden rounded-lg border'>
-      <div className='divide-border/60 grid min-w-0 grid-cols-2 divide-x sm:grid-cols-3 lg:grid-cols-5'>
+      <div className='divide-border/60 grid grid-cols-2 divide-x sm:grid-cols-3 lg:grid-cols-5'>
         {items.map((it, idx) => {
           const Icon = it.icon
           return (
             <div
               key={it.title}
-              className={cn(
-                'min-w-0 px-3 py-2.5 sm:px-5 sm:py-4',
-                idx === items.length - 1 &&
-                  items.length % 2 !== 0 &&
-                  'col-span-2 sm:col-span-1'
-              )}
+              className={`px-3 py-2.5 sm:px-5 sm:py-4 ${idx === items.length - 1 && items.length % 2 !== 0 ? 'col-span-2 sm:col-span-1' : ''}`}
             >
-              <div className='flex min-w-0 items-center gap-2'>
+              <div className='flex items-center gap-2'>
                 <Icon className='text-muted-foreground/60 size-3.5 shrink-0' />
                 <div className='text-muted-foreground truncate text-xs font-medium tracking-wider uppercase'>
                   {it.title}
@@ -163,7 +133,7 @@ export function LogStatCards(props: LogStatCardsProps) {
               </div>
 
               {loading ? (
-                <div className='mt-2 flex flex-col gap-1.5'>
+                <div className='mt-2 space-y-1.5'>
                   <Skeleton className='h-7 w-20' />
                   <Skeleton className='h-3.5 w-28' />
                 </div>
@@ -178,10 +148,7 @@ export function LogStatCards(props: LogStatCardsProps) {
                 </>
               ) : (
                 <>
-                  <div
-                    className='text-foreground mt-1.5 max-w-full truncate font-mono text-lg font-bold tracking-tight tabular-nums sm:mt-2 sm:text-2xl'
-                    title={it.fullValue}
-                  >
+                  <div className='text-foreground mt-1.5 font-mono text-lg font-bold tracking-tight tabular-nums sm:mt-2 sm:text-2xl'>
                     {it.value}
                   </div>
                   <div className='text-muted-foreground/60 mt-1 hidden text-xs md:block'>

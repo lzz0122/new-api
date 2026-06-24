@@ -34,7 +34,6 @@ type TitledCardProps = {
   icon?: ReactNode
   action?: ReactNode
   children?: ReactNode
-  disableHoverEffect?: boolean
   className?: string
   headerClassName?: string
   contentClassName?: string
@@ -49,7 +48,6 @@ export function TitledCard({
   icon,
   action,
   children,
-  disableHoverEffect,
   className,
   headerClassName,
   contentClassName,
@@ -58,10 +56,7 @@ export function TitledCard({
   descriptionClassName,
 }: TitledCardProps) {
   return (
-    <Card
-      data-card-hover={disableHoverEffect ? 'false' : undefined}
-      className={cn('gap-0 overflow-hidden py-0', className)}
-    >
+    <Card className={cn('gap-0 overflow-hidden py-0', className)}>
       <CardHeader
         className={cn('border-b p-3 !pb-3 sm:p-5 sm:!pb-5', headerClassName)}
       >

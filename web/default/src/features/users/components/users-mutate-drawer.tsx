@@ -111,10 +111,10 @@ export function UsersMutateDrawer({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [quotaDialogOpen, setQuotaDialogOpen] = useState(false)
 
-  // Fetch groups
+  // Fetch user groups. Pricing/channel groups are intentionally separate.
   const { data: groupsData } = useQuery({
-    queryKey: ['groups'],
-    queryFn: getGroups,
+    queryKey: ['user-group-options'],
+    queryFn: getUserGroupOptions,
     staleTime: 5 * 60 * 1000,
   })
 
@@ -131,6 +131,15 @@ export function UsersMutateDrawer({
     resolver: zodResolver(userFormSchema),
     defaultValues: USER_FORM_DEFAULT_VALUES,
   })
+
+  const selectedGroup = form.watch('group') || currentRow?.group || ''
+  const groups = useMemo(() => {
+    const groupSet = new Set(groupsData?.data || [])
+    if (selectedGroup) {
+      groupSet.add(selectedGroup)
+    }
+    return Array.from(groupSet)
+  }, [groupsData?.data, selectedGroup])
 
   // Load existing data when updating
   useEffect(() => {

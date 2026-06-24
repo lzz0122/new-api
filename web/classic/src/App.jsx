@@ -41,6 +41,7 @@ import Chat2Link from './pages/Chat2Link';
 import MjProxy from './pages/Midjourney';
 import Pricing from './pages/Pricing';
 import Task from './pages/Task';
+import CarpoolUsage from './pages/CarpoolUsage';
 import ModelPage from './pages/Model';
 import ModelDeploymentPage from './pages/ModelDeployment';
 import Playground from './pages/Playground';
@@ -311,6 +312,26 @@ function App() {
             <PrivateRoute>
               <Suspense fallback={<Loading></Loading>} key={location.pathname}>
                 <Task />
+              </Suspense>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path='/console/carpool'
+          element={
+            <PrivateRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <CarpoolUsage />
+              </Suspense>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path='/usage-logs/carpool'
+          element={
+            <PrivateRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <CarpoolUsage />
               </Suspense>
             </PrivateRoute>
           }

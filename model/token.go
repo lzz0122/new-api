@@ -1,8 +1,10 @@
 package model
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -28,7 +30,237 @@ type Token struct {
 	UsedQuota          int            `json:"used_quota" gorm:"default:0"` // used quota
 	Group              string         `json:"group" gorm:"default:''"`
 	CrossGroupRetry    bool           `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
+	GroupConfig        string         `json:"group_config" gorm:"type:text"`
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
+}
+
+const (
+	TokenGroupFailoverStrategyFallback    = "fallback"
+	TokenGroupFailoverStrategyReturnError = "return_error"
+
+	TokenGroupRecoveryStrategyProbeThenSwitch = "probe_then_switch"
+	TokenGroupRecoveryStrategySticky          = "sticky"
+
+	TokenGroupDetectionStrategyOne   = "one"
+	TokenGroupDetectionStrategyHalf  = "half"
+	TokenGroupDetectionStrategyAll   = "all"
+	TokenGroupDetectionStrategyRatio = "ratio"
+
+	DefaultTokenGroupCooldownSeconds = 600
+	DefaultTokenGroupDetectionRatio  = 0.5
+)
+
+type TokenGroupItem struct {
+	Group                     string  `json:"group"`
+	Order                     int     `json:"order"`
+	FailoverStrategy          string  `json:"failover_strategy,omitempty"`
+	TimeoutSeconds            int     `json:"timeout_seconds,omitempty"`
+	CooldownSeconds           int     `json:"cooldown_seconds,omitempty"`
+	RecoveryStrategy          string  `json:"recovery_strategy,omitempty"`
+	FailureDetectionStrategy  string  `json:"failure_detection_strategy,omitempty"`
+	FailureDetectionRatio     float64 `json:"failure_detection_ratio,omitempty"`
+	RecoveryDetectionStrategy string  `json:"recovery_detection_strategy,omitempty"`
+	RecoveryDetectionRatio    float64 `json:"recovery_detection_ratio,omitempty"`
+}
+
+type TokenGroupConfig struct {
+	Groups                    []TokenGroupItem `json:"groups"`
+	FailoverStrategy          string           `json:"failover_strategy"`
+	TimeoutSeconds            int              `json:"timeout_seconds"`
+	CooldownSeconds           int              `json:"cooldown_seconds"`
+	RecoveryStrategy          string           `json:"recovery_strategy"`
+	FailureDetectionStrategy  string           `json:"failure_detection_strategy"`
+	FailureDetectionRatio     float64          `json:"failure_detection_ratio"`
+	RecoveryDetectionStrategy string           `json:"recovery_detection_strategy"`
+	RecoveryDetectionRatio    float64          `json:"recovery_detection_ratio"`
+}
+
+func DefaultTokenGroupConfig(group string) TokenGroupConfig {
+	group = strings.TrimSpace(group)
+	cfg := TokenGroupConfig{
+		FailoverStrategy:          TokenGroupFailoverStrategyReturnError,
+		CooldownSeconds:           DefaultTokenGroupCooldownSeconds,
+		RecoveryStrategy:          TokenGroupRecoveryStrategyProbeThenSwitch,
+		FailureDetectionStrategy:  TokenGroupDetectionStrategyOne,
+		FailureDetectionRatio:     DefaultTokenGroupDetectionRatio,
+		RecoveryDetectionStrategy: TokenGroupDetectionStrategyOne,
+		RecoveryDetectionRatio:    DefaultTokenGroupDetectionRatio,
+	}
+	if group != "" {
+		cfg.Groups = []TokenGroupItem{{Group: group, Order: 1}}
+	}
+	return cfg
+}
+
+func NormalizeTokenGroupConfig(cfg TokenGroupConfig, fallbackGroup string) TokenGroupConfig {
+	if cfg.FailoverStrategy != TokenGroupFailoverStrategyFallback &&
+		cfg.FailoverStrategy != TokenGroupFailoverStrategyReturnError {
+		if len(cfg.Groups) > 1 {
+			cfg.FailoverStrategy = TokenGroupFailoverStrategyFallback
+		} else {
+			cfg.FailoverStrategy = TokenGroupFailoverStrategyReturnError
+		}
+	}
+	if cfg.CooldownSeconds <= 0 {
+		cfg.CooldownSeconds = DefaultTokenGroupCooldownSeconds
+	}
+	if cfg.TimeoutSeconds < 0 {
+		cfg.TimeoutSeconds = 0
+	}
+	if cfg.RecoveryStrategy != TokenGroupRecoveryStrategyProbeThenSwitch &&
+		cfg.RecoveryStrategy != TokenGroupRecoveryStrategySticky {
+		cfg.RecoveryStrategy = TokenGroupRecoveryStrategyProbeThenSwitch
+	}
+	cfg.FailureDetectionStrategy = normalizeTokenGroupDetectionStrategy(cfg.FailureDetectionStrategy)
+	cfg.FailureDetectionRatio = normalizeTokenGroupDetectionRatio(cfg.FailureDetectionRatio)
+	cfg.RecoveryDetectionStrategy = normalizeTokenGroupDetectionStrategy(cfg.RecoveryDetectionStrategy)
+	cfg.RecoveryDetectionRatio = normalizeTokenGroupDetectionRatio(cfg.RecoveryDetectionRatio)
+
+	seen := make(map[string]struct{}, len(cfg.Groups))
+	groups := make([]TokenGroupItem, 0, len(cfg.Groups))
+	for idx, item := range cfg.Groups {
+		item.Group = strings.TrimSpace(item.Group)
+		if item.Group == "" {
+			continue
+		}
+		if _, ok := seen[item.Group]; ok {
+			continue
+		}
+		seen[item.Group] = struct{}{}
+		if item.Order <= 0 {
+			item.Order = idx + 1
+		}
+		item = normalizeTokenGroupItemSettings(item)
+		groups = append(groups, item)
+	}
+	if len(groups) == 0 {
+		fallbackGroup = strings.TrimSpace(fallbackGroup)
+		if fallbackGroup != "" {
+			groups = append(groups, TokenGroupItem{Group: fallbackGroup, Order: 1})
+		}
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		if groups[i].Order == groups[j].Order {
+			return i < j
+		}
+		return groups[i].Order < groups[j].Order
+	})
+	for idx := range groups {
+		if groups[idx].Order <= 0 {
+			groups[idx].Order = idx + 1
+		}
+	}
+	cfg.Groups = groups
+	return cfg
+}
+
+func normalizeTokenGroupDetectionStrategy(strategy string) string {
+	switch strategy {
+	case TokenGroupDetectionStrategyHalf,
+		TokenGroupDetectionStrategyAll,
+		TokenGroupDetectionStrategyRatio:
+		return strategy
+	default:
+		return TokenGroupDetectionStrategyOne
+	}
+}
+
+func normalizeTokenGroupDetectionRatio(ratio float64) float64 {
+	if ratio <= 0 || ratio > 1 {
+		return DefaultTokenGroupDetectionRatio
+	}
+	return ratio
+}
+
+func normalizeTokenGroupItemSettings(item TokenGroupItem) TokenGroupItem {
+	if item.FailoverStrategy != "" &&
+		item.FailoverStrategy != TokenGroupFailoverStrategyFallback &&
+		item.FailoverStrategy != TokenGroupFailoverStrategyReturnError {
+		item.FailoverStrategy = ""
+	}
+	if item.TimeoutSeconds < 0 {
+		item.TimeoutSeconds = 0
+	}
+	if item.CooldownSeconds < 0 {
+		item.CooldownSeconds = 0
+	}
+	if item.RecoveryStrategy != "" &&
+		item.RecoveryStrategy != TokenGroupRecoveryStrategyProbeThenSwitch &&
+		item.RecoveryStrategy != TokenGroupRecoveryStrategySticky {
+		item.RecoveryStrategy = ""
+	}
+	if item.FailureDetectionStrategy != "" {
+		item.FailureDetectionStrategy = normalizeTokenGroupDetectionStrategy(item.FailureDetectionStrategy)
+	}
+	if item.FailureDetectionRatio < 0 || item.FailureDetectionRatio > 1 {
+		item.FailureDetectionRatio = 0
+	}
+	if item.RecoveryDetectionStrategy != "" {
+		item.RecoveryDetectionStrategy = normalizeTokenGroupDetectionStrategy(item.RecoveryDetectionStrategy)
+	}
+	if item.RecoveryDetectionRatio < 0 || item.RecoveryDetectionRatio > 1 {
+		item.RecoveryDetectionRatio = 0
+	}
+	return item
+}
+
+func tokenGroupItemHasCustomSettings(item TokenGroupItem) bool {
+	return item.FailoverStrategy != "" ||
+		item.TimeoutSeconds != 0 ||
+		item.CooldownSeconds != 0 ||
+		item.RecoveryStrategy != "" ||
+		item.FailureDetectionStrategy != "" ||
+		item.FailureDetectionRatio != 0 ||
+		item.RecoveryDetectionStrategy != "" ||
+		item.RecoveryDetectionRatio != 0
+}
+
+func (token *Token) ParseGroupConfig() TokenGroupConfig {
+	if token == nil {
+		return NormalizeTokenGroupConfig(TokenGroupConfig{}, "")
+	}
+	if strings.TrimSpace(token.GroupConfig) == "" {
+		return DefaultTokenGroupConfig(token.Group)
+	}
+	var cfg TokenGroupConfig
+	if err := json.Unmarshal([]byte(token.GroupConfig), &cfg); err != nil {
+		return DefaultTokenGroupConfig(token.Group)
+	}
+	return NormalizeTokenGroupConfig(cfg, token.Group)
+}
+
+func (token *Token) SetGroupConfig(cfg TokenGroupConfig) error {
+	cfg = NormalizeTokenGroupConfig(cfg, token.Group)
+	if len(cfg.Groups) > 0 {
+		token.Group = cfg.Groups[0].Group
+	}
+	if len(cfg.Groups) <= 1 &&
+		cfg.TimeoutSeconds == 0 &&
+		cfg.CooldownSeconds == DefaultTokenGroupCooldownSeconds &&
+		cfg.RecoveryStrategy == TokenGroupRecoveryStrategyProbeThenSwitch &&
+		cfg.FailureDetectionStrategy == TokenGroupDetectionStrategyOne &&
+		cfg.FailureDetectionRatio == DefaultTokenGroupDetectionRatio &&
+		cfg.RecoveryDetectionStrategy == TokenGroupDetectionStrategyOne &&
+		cfg.RecoveryDetectionRatio == DefaultTokenGroupDetectionRatio &&
+		(len(cfg.Groups) == 0 || !tokenGroupItemHasCustomSettings(cfg.Groups[0])) {
+		token.GroupConfig = ""
+		return nil
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	token.GroupConfig = string(data)
+	return nil
+}
+
+func (token *Token) OrderedGroups() []string {
+	cfg := token.ParseGroupConfig()
+	groups := make([]string, 0, len(cfg.Groups))
+	for _, item := range cfg.Groups {
+		groups = append(groups, item.Group)
+	}
+	return groups
 }
 
 func (token *Token) Clean() {
@@ -302,7 +534,7 @@ func (token *Token) Update() (err error) {
 		}
 	}()
 	err = DB.Model(token).Select("name", "status", "expired_time", "remain_quota", "unlimited_quota",
-		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry").Updates(token).Error
+		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry", "group_config").Updates(token).Error
 	return err
 }
 

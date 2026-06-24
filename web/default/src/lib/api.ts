@@ -21,6 +21,7 @@ import { t } from 'i18next'
 import { toast } from 'sonner'
 
 import { useAuthStore } from '@/stores/auth-store'
+import { installCarpoolMockApi } from '@/lib/carpool-mock'
 
 declare module 'axios' {
   export interface AxiosRequestConfig {
@@ -47,6 +48,8 @@ export const api = axios.create({
     'Cache-Control': 'no-store', // Prevent caching
   },
 })
+
+installCarpoolMockApi(api)
 
 // ============================================================================
 // Request Deduplication

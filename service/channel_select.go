@@ -15,7 +15,6 @@ type RetryParam struct {
 	Ctx          *gin.Context
 	TokenGroup   string
 	ModelName    string
-	RequestPath  string
 	Retry        *int
 	resetNextTry bool
 }
@@ -44,6 +43,51 @@ func (p *RetryParam) IncreaseRetry() {
 
 func (p *RetryParam) ResetRetryNextTry() {
 	p.resetNextTry = true
+}
+
+func requestFailedChannelKey(group string, modelName string) string {
+	return group + "\x00" + modelName
+}
+
+func MarkRequestChannelFailed(c *gin.Context, group string, modelName string, channelID int) {
+	if c == nil || group == "" || modelName == "" || channelID <= 0 {
+		return
+	}
+	failures, _ := common.GetContextKeyType[map[string]map[int]struct{}](c, constant.ContextKeyFailedChannelIds)
+	if failures == nil {
+		failures = make(map[string]map[int]struct{})
+	}
+	key := requestFailedChannelKey(group, modelName)
+	if failures[key] == nil {
+		failures[key] = make(map[int]struct{})
+	}
+	failures[key][channelID] = struct{}{}
+	common.SetContextKey(c, constant.ContextKeyFailedChannelIds, failures)
+}
+
+func getRequestFailedChannelIDs(c *gin.Context, group string, modelName string) map[int]struct{} {
+	if c == nil || group == "" || modelName == "" {
+		return nil
+	}
+	failures, ok := common.GetContextKeyType[map[string]map[int]struct{}](c, constant.ContextKeyFailedChannelIds)
+	if !ok || len(failures) == 0 {
+		return nil
+	}
+	source := failures[requestFailedChannelKey(group, modelName)]
+	if len(source) == 0 {
+		return nil
+	}
+	copied := make(map[int]struct{}, len(source))
+	for id := range source {
+		copied[id] = struct{}{}
+	}
+	return copied
+}
+
+func setSelectedTokenGroupContext(c *gin.Context, cfg model.TokenGroupConfig, group string) {
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, group)
+	settings := effectiveTokenGroupItem(cfg, group)
+	common.SetContextKey(c, constant.ContextKeyTokenGroupTimeout, settings.TimeoutSeconds)
 }
 
 // CacheGetRandomSatisfiedChannel tries to get a random channel that satisfies the requirements.
@@ -87,6 +131,93 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	selectGroup := param.TokenGroup
 	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
 
+	if cfg, ok := GetTokenGroupConfigFromContext(param.Ctx); ok && len(cfg.Groups) > 1 && param.TokenGroup != "auto" {
+		tokenID := common.GetContextKeyInt(param.Ctx, constant.ContextKeyTokenId)
+		startGroupIndex := 0
+		stickyRecoveredIndexes := make([]int, 0)
+		if lastGroupIndex, exists := common.GetContextKey(param.Ctx, constant.ContextKeyTokenGroupIndex); exists {
+			if idx, ok := lastGroupIndex.(int); ok {
+				startGroupIndex = idx
+			}
+		}
+		for i := startGroupIndex; i < len(cfg.Groups); i++ {
+			group := cfg.Groups[i].Group
+			if cooling, reason, until := IsTokenGroupModelCooling(tokenID, group, param.ModelName, cfg); cooling {
+				AppendTokenGroupFailure(param.Ctx, FormatTokenGroupCoolingReason(group, reason, until))
+				if until == 0 && tokenGroupRecoveryStrategy(cfg, group) == model.TokenGroupRecoveryStrategySticky {
+					stickyRecoveredIndexes = append(stickyRecoveredIndexes, i)
+				}
+				common.SetContextKey(param.Ctx, constant.ContextKeyTokenGroupIndex, i+1)
+				param.SetRetry(0)
+				continue
+			}
+			priorityRetry := param.GetRetry()
+			if i > startGroupIndex {
+				priorityRetry = 0
+			}
+			logger.LogDebug(param.Ctx, "Token selecting group: %s, priorityRetry: %d", group, priorityRetry)
+			excludedIDs := getRequestFailedChannelIDs(param.Ctx, group, param.ModelName)
+			if preferredIDs := getTokenGroupPreferredChannels(tokenID, group, param.ModelName); len(preferredIDs) > 0 {
+				channel, err = model.GetRandomSatisfiedChannelFromIDsExcluding(group, param.ModelName, priorityRetry, preferredIDs, excludedIDs)
+				if err != nil {
+					return nil, group, err
+				}
+				if channel == nil {
+					setTokenGroupPreferredChannels(tokenID, group, param.ModelName, nil)
+				}
+			}
+			if channel == nil {
+				channel, err = model.GetRandomSatisfiedChannelExcluding(group, param.ModelName, priorityRetry, excludedIDs)
+			}
+			if err != nil {
+				return nil, group, err
+			}
+			if channel == nil {
+				common.SetContextKey(param.Ctx, constant.ContextKeyTokenGroupIndex, i+1)
+				param.SetRetry(0)
+				continue
+			}
+			setSelectedTokenGroupContext(param.Ctx, cfg, group)
+			selectGroup = group
+			if priorityRetry >= common.RetryTimes {
+				common.SetContextKey(param.Ctx, constant.ContextKeyTokenGroupIndex, i+1)
+				param.SetRetry(0)
+				param.ResetRetryNextTry()
+			} else {
+				common.SetContextKey(param.Ctx, constant.ContextKeyTokenGroupIndex, i)
+			}
+			return channel, selectGroup, nil
+		}
+		for _, i := range stickyRecoveredIndexes {
+			group := cfg.Groups[i].Group
+			logger.LogDebug(param.Ctx, "Token selecting sticky recovered group: %s", group)
+			excludedIDs := getRequestFailedChannelIDs(param.Ctx, group, param.ModelName)
+			if preferredIDs := getTokenGroupPreferredChannels(tokenID, group, param.ModelName); len(preferredIDs) > 0 {
+				channel, err = model.GetRandomSatisfiedChannelFromIDsExcluding(group, param.ModelName, 0, preferredIDs, excludedIDs)
+				if err != nil {
+					return nil, group, err
+				}
+				if channel == nil {
+					setTokenGroupPreferredChannels(tokenID, group, param.ModelName, nil)
+				}
+			}
+			if channel == nil {
+				channel, err = model.GetRandomSatisfiedChannelExcluding(group, param.ModelName, 0, excludedIDs)
+			}
+			if err != nil {
+				return nil, group, err
+			}
+			if channel == nil {
+				continue
+			}
+			setSelectedTokenGroupContext(param.Ctx, cfg, group)
+			common.SetContextKey(param.Ctx, constant.ContextKeyTokenGroupIndex, i)
+			param.SetRetry(0)
+			return channel, group, nil
+		}
+		return nil, selectGroup, nil
+	}
+
 	if param.TokenGroup == "auto" {
 		if len(setting.GetAutoGroups()) == 0 {
 			return nil, selectGroup, errors.New("auto groups is not enabled")
@@ -116,7 +247,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, _ = model.GetRandomSatisfiedChannel(autoGroup, param.ModelName, priorityRetry, param.RequestPath)
+			channel, _ = model.GetRandomSatisfiedChannelExcluding(autoGroup, param.ModelName, priorityRetry, getRequestFailedChannelIDs(param.Ctx, autoGroup, param.ModelName))
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
 				// 当前分组没有该模型的可用渠道，尝试下一个分组
@@ -154,7 +285,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			break
 		}
 	} else {
-		channel, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry(), param.RequestPath)
+		channel, err = model.GetRandomSatisfiedChannelExcluding(param.TokenGroup, param.ModelName, param.GetRetry(), getRequestFailedChannelIDs(param.Ctx, param.TokenGroup, param.ModelName))
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}

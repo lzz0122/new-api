@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { create } from 'zustand'
+import { getCarpoolMockUser, isCarpoolMockEnabled } from '@/lib/carpool-mock'
 
 import type { AdminCapabilities } from '@/lib/admin-permissions'
 
@@ -66,6 +67,9 @@ export const useAuthStore = create<AuthState>()((set) => {
   const initUser = (() => {
     try {
       if (typeof window !== 'undefined') {
+        if (isCarpoolMockEnabled()) {
+          return getCarpoolMockUser()
+        }
         const saved = window.localStorage.getItem('user')
         return saved ? JSON.parse(saved) : null
       }

@@ -77,6 +77,7 @@ type Log struct {
 	Ip                string `json:"ip" gorm:"index;default:''"`
 	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
 	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
+	CarnivalSessionID int    `json:"carnival_session_id,omitempty" gorm:"index;default:0"`
 	Other             string `json:"other"`
 }
 
@@ -89,7 +90,6 @@ const (
 	LogTypeSystem  = 4
 	LogTypeError   = 5
 	LogTypeRefund  = 6
-	LogTypeLogin   = 7
 )
 
 func ensureLogRequestId(log *Log) {
@@ -121,8 +121,6 @@ func formatUserLogs(logs []*Log, startIdx int) {
 		if otherMap != nil {
 			// Remove admin-only debug fields.
 			delete(otherMap, "admin_info")
-			// Remove operation-audit details (operator/route info), admin-only.
-			delete(otherMap, "audit_info")
 			// delete(otherMap, "reject_reason")
 			delete(otherMap, "stream_status")
 		}
@@ -381,6 +379,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		}(),
 		RequestId:         requestId,
 		UpstreamRequestId: upstreamRequestId,
+		CarnivalSessionID: carnivalSessionID,
 		Other:             otherStr,
 	}
 	err := createLog(log)
@@ -421,6 +420,20 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		return
 	}
 	username, _ := GetUsernameById(params.UserId, false)
+	carnivalSessionID := 0
+	if params.LogType == LogTypeConsume && params.Quota > 0 && strings.TrimSpace(params.Group) != "" {
+		session, err := GetActiveCarnivalSession(params.Group)
+		if err != nil {
+			common.SysLog("failed to get active carnival session: " + err.Error())
+		} else if session != nil {
+			carnivalSessionID = session.Id
+			if params.Other == nil {
+				params.Other = map[string]interface{}{}
+			}
+			params.Other["carnival_session_id"] = session.Id
+			params.Other["carnival_started_at"] = session.StartedAt
+		}
+	}
 	tokenName := ""
 	if params.TokenId > 0 {
 		if token, err := GetTokenById(params.TokenId); err == nil {

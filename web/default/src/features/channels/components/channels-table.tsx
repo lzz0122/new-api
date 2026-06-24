@@ -315,7 +315,6 @@ export function ChannelsTable() {
       models: false,
       tag: false,
     },
-    columnVisibilityStorageKey: CHANNELS_COLUMN_VISIBILITY_STORAGE_KEY,
     columnFilters,
     pagination,
     globalFilter,

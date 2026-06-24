@@ -144,7 +144,7 @@ export async function resetUserTwoFA(id: number): Promise<ApiResponse> {
 }
 
 /**
- * Get all available groups
+ * Get all pricing/channel groups.
  */
 export async function getGroups(): Promise<ApiResponse<string[]>> {
   const res = await api.get('/api/group/')

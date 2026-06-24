@@ -138,18 +138,6 @@ export function RedemptionsMutateDrawer({
     }
   }
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    if (!isUpdate) {
-      const name = form.getValues('name')
-      if (!name?.trim()) {
-        const quota = parseQuotaFromDollars(form.getValues('quota_dollars'))
-        form.setValue('name', formatQuota(quota), { shouldValidate: true })
-      }
-    }
-
-    void form.handleSubmit(onSubmit)(event)
-  }
-
   const handleSetExpiry = (months: number, days: number, hours: number) => {
     const newDate = addTimeToDate(months, days, hours)
     form.setValue('expired_time', newDate)
@@ -192,7 +180,7 @@ export function RedemptionsMutateDrawer({
         <Form {...form}>
           <form
             id='redemption-form'
-            onSubmit={handleSubmit}
+            onSubmit={form.handleSubmit(onSubmit)}
             className={sideDrawerFormClassName()}
           >
             <SideDrawerSection>

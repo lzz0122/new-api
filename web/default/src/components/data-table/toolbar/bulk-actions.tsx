@@ -56,12 +56,7 @@ export function DataTableBulkActions<TData>({
   const selectedRows = table.getFilteredSelectedRowModel().rows
   const selectedCount = selectedRows.length
   const toolbarRef = useRef<HTMLDivElement>(null)
-  const buttonsRef = useRef<NodeListOf<HTMLButtonElement> | null>(null)
   const [announcement, setAnnouncement] = useState('')
-
-  useLayoutEffect(() => {
-    buttonsRef.current = toolbarRef.current?.querySelectorAll('button') ?? null
-  })
 
   // Announce selection changes to screen readers
   useEffect(() => {
@@ -81,7 +76,7 @@ export function DataTableBulkActions<TData>({
   }
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
-    const buttons = buttonsRef.current
+    const buttons = toolbarRef.current?.querySelectorAll('button')
     if (!buttons) return
 
     const currentIndex = Array.from(buttons).findIndex(

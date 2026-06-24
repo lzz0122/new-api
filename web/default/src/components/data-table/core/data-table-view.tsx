@@ -49,12 +49,8 @@ export { DataTableRowActionMenu } from './row-action-menu'
 
 export function DataTableView<TData>(props: DataTableViewProps<TData>) {
   const rows = props.rows ?? props.table.getRowModel().rows
-  const colSpan = React.useMemo(
-    () => props.table.getVisibleLeafColumns().length,
-    [props.table]
-  )
+  const colSpan = props.table.getVisibleLeafColumns().length
   const columnClassName = useResolvedColumnClassName(
-    props.table,
     props.getColumnClassName,
     props.pinnedColumns
   )
@@ -127,7 +123,31 @@ function SplitHeaderTableView<TData>({
   colSpan: number
   getColumnClassName: DataTableColumnClassName
 }) {
+  const headerHostRef = React.useRef<HTMLDivElement>(null)
+  const bodyHostRef = React.useRef<HTMLDivElement>(null)
   const tableSizing = getTableSizing(props)
+
+  React.useEffect(() => {
+    const headerScroller = headerHostRef.current?.querySelector<HTMLElement>(
+      '[data-slot=table-container]'
+    )
+    const bodyScroller = bodyHostRef.current?.querySelector<HTMLElement>(
+      '[data-slot=table-container]'
+    )
+
+    if (!headerScroller || !bodyScroller) return
+
+    const syncHeaderScroll = () => {
+      headerScroller.scrollLeft = bodyScroller.scrollLeft
+    }
+
+    syncHeaderScroll()
+    bodyScroller.addEventListener('scroll', syncHeaderScroll, { passive: true })
+
+    return () => {
+      bodyScroller.removeEventListener('scroll', syncHeaderScroll)
+    }
+  }, [rows.length, props.tableClassName, props.colgroup])
 
   return (
     <div
@@ -145,42 +165,45 @@ function SplitHeaderTableView<TData>({
           props.bodyContainerClassName
         )}
       >
-        <table
-          data-slot='table'
-          className={cn(
-            'w-full caption-bottom text-sm tabular-nums [&_td]:text-sm [&_td_*]:text-sm [&_th]:text-sm [&_th_*]:text-sm',
-            props.tableClassName
-          )}
-          style={tableSizing.style}
+        <div
+          ref={headerHostRef}
+          className='[scrollbar-gutter:stable] overflow-hidden [&_[data-slot=table-container]]:overflow-x-hidden'
         >
-          {tableSizing.colgroup}
-          <DataTableHeader
-            table={props.table}
-            applyHeaderSize={props.applyHeaderSize}
-            className={cn('sticky top-0 z-10', props.tableHeaderClassName)}
-            rowClassName={props.tableHeaderRowClassName}
-            getColumnClassName={getColumnClassName}
-          />
-          {renderTableBody(props, rows, colSpan, getColumnClassName)}
-        </table>
+          <Table className={props.tableClassName} style={tableSizing.style}>
+            {tableSizing.colgroup}
+            <DataTableHeader
+              table={props.table}
+              applyHeaderSize={props.applyHeaderSize}
+              className={props.tableHeaderClassName}
+              rowClassName={props.tableHeaderRowClassName}
+              getColumnClassName={getColumnClassName}
+            />
+          </Table>
+        </div>
+        <div
+          ref={bodyHostRef}
+          className={cn(
+            'min-h-0 flex-1 [scrollbar-gutter:stable] overflow-y-auto',
+            props.bodyContainerClassName
+          )}
+        >
+          <Table className={props.tableClassName} style={tableSizing.style}>
+            {tableSizing.colgroup}
+            {renderTableBody(props, rows, colSpan, getColumnClassName)}
+          </Table>
+        </div>
       </div>
     </div>
   )
 }
 
-function useResolvedColumnClassName<TData>(
-  table: TanstackTable<TData>,
+function useResolvedColumnClassName(
   getColumnClassName?: DataTableColumnClassName,
   pinnedColumns?: DataTablePinnedColumn[]
 ) {
-  const allPinnedColumns = React.useMemo(() => {
-    const metaPinnedColumns = getMetaPinnedColumns(table)
-    return mergePinnedColumns(pinnedColumns, metaPinnedColumns)
-  }, [table, pinnedColumns])
-
   const pinnedColumnById = React.useMemo(
-    () => getPinnedColumnMap(allPinnedColumns),
-    [allPinnedColumns]
+    () => getPinnedColumnMap(pinnedColumns),
+    [pinnedColumns]
   )
 
   return React.useMemo(
@@ -325,7 +348,6 @@ function renderDefaultRow<TData>(
       row={row}
       className={cn(props.tableBodyRowClassName, props.getRowClassName?.(row))}
       getColumnClassName={getColumnClassName}
-      cellRenderColumns={props.table.options.columns}
     />
   )
 }

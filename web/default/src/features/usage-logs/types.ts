@@ -106,7 +106,7 @@ export interface LogOtherData {
     server_ip?: string
     version?: string
     node_name?: string
-    // Operator identity for audit logs (type=3, admin only)
+    // Manage audit fields (type=3, admin only)
     admin_username?: string
     admin_id?: number | string
     admin_role?: number
@@ -121,24 +121,6 @@ export interface LogOtherData {
       clamped: number
     }
   }
-  // Language-independent operation descriptor (audit/login logs).
-  // Frontend renders localized content from action + params via i18n templates.
-  op?: {
-    action?: string
-    params?: Record<string, string | number | boolean | string[]>
-  }
-  // Operation audit details written by the admin-audit fallback in authHelper (type=3, admin only)
-  audit_info?: {
-    method?: string
-    route?: string
-    path?: string
-    status?: number
-    success?: boolean
-    params?: Record<string, string>
-  }
-  // Login audit fields (type=7); visible to the log owner
-  login_method?: string
-  user_agent?: string
   request_path?: string
   request_conversion?: string[]
   ws?: boolean
@@ -227,6 +209,193 @@ export interface LogStatistics {
   quota: number
   rpm: number
   tpm: number
+}
+
+export interface UpstreamUsageRateLimit {
+  window: string
+  limit: number
+  used: number
+  remaining: number
+  reset_at?: string
+}
+
+export interface UpstreamUsageConcurrency {
+  used: number
+  limit?: number
+  remaining?: number
+  updated_at?: string
+}
+
+export interface UpstreamUsageSnapshot {
+  group: string
+  base_url: string
+  key_name?: string
+  masked_key?: string
+  key_status?: string
+  upstream_group?: string
+  concurrency?: UpstreamUsageConcurrency
+  rate_limits: UpstreamUsageRateLimit[]
+  updated_at: number
+  next_refresh_at: number
+  cached: boolean
+}
+
+export interface CarnivalUserUsageSummary {
+  user_id: number
+  username: string
+  quota: number
+  token_used: number
+  request_count: number
+}
+
+export interface CarnivalSessionSummary {
+  id: number
+  group: string
+  started_at: number
+  ended_at: number
+  duration_seconds: number
+  since_end_seconds: number
+  total_quota: number
+  total_tokens: number
+  request_count: number
+  users: CarnivalUserUsageSummary[]
+}
+
+export interface CarnivalAggregateSummary {
+  total_quota: number
+  total_tokens: number
+  request_count: number
+  users: CarnivalUserUsageSummary[]
+}
+
+export interface CarnivalStatusSnapshot {
+  group: string
+  active: CarnivalSessionSummary | null
+  last: CarnivalSessionSummary | null
+  server_time: number
+}
+
+export interface CarnivalHistorySnapshot {
+  group: string
+  months: string[]
+  selected_month: string
+  sessions: CarnivalSessionSummary[]
+  month_total: CarnivalAggregateSummary
+  all_total: CarnivalAggregateSummary
+}
+
+export interface CarpoolSessionSummary {
+  id: number
+  group: string
+  started_at: number
+  ended_at: number
+  duration_seconds: number
+  since_end_seconds?: number
+  total_quota: number
+  total_tokens: number
+  request_count: number
+}
+
+export interface CarpoolStatusSnapshot {
+  group: string
+  active: CarpoolSessionSummary | null
+  last: CarpoolSessionSummary | null
+  server_time: number
+}
+
+export interface CarpoolHistoryGroup {
+  group: string
+  total: Partial<CarpoolUsageTotals>
+  sessions: CarpoolSessionSummary[]
+}
+
+export interface CarpoolHistorySnapshot {
+  months: string[]
+  selected_month: string
+  groups: CarpoolHistoryGroup[]
+}
+
+export interface CarpoolGroupsSnapshot {
+  groups: string[]
+  default_group: string
+}
+
+export interface CarpoolUsageDailySummary {
+  date: string
+  quota: number
+}
+
+export interface CarpoolUsageTokenSummary {
+  token_id: number
+  user_id: number
+  name: string
+  period_quota: number
+  cumulative_quota: number
+  gross_period_quota: number
+  gross_cumulative_quota: number
+  carnival_period_quota: number
+  carnival_cumulative_quota: number
+  current_carnival_quota: number
+  period_token_used: number
+  cumulative_token_used: number
+  period_request_count: number
+  cumulative_request_count: number
+  active: boolean
+  last_seen_at: string
+}
+
+export interface CarpoolUsageUserSummary {
+  user_id: number
+  username: string
+  email: string
+  period_quota: number
+  cumulative_quota: number
+  gross_period_quota: number
+  gross_cumulative_quota: number
+  carnival_period_quota: number
+  carnival_cumulative_quota: number
+  current_carnival_quota: number
+  period_token_used: number
+  cumulative_token_used: number
+  period_request_count: number
+  cumulative_request_count: number
+  active_tokens: number
+  known_tokens: number
+  daily: CarpoolUsageDailySummary[]
+  tokens: CarpoolUsageTokenSummary[]
+}
+
+export interface CarpoolUsageTotals {
+  period_quota: number
+  cumulative_quota: number
+  gross_period_quota: number
+  gross_cumulative_quota: number
+  carnival_period_quota: number
+  carnival_cumulative_quota: number
+  current_carnival_quota: number
+  period_token_used: number
+  cumulative_token_used: number
+  period_request_count: number
+  cumulative_request_count: number
+  users: number
+  active_tokens: number
+  known_tokens: number
+}
+
+export interface CarpoolUsageSummarySnapshot {
+  group: string
+  period: 'day' | 'week' | 'month' | 'session'
+  start_date: string
+  end_date: string
+  last_run_at: string
+  quota_per_unit: number
+  active?: boolean
+  session?: CarpoolSessionSummary
+  totals: CarpoolUsageTotals
+  last_sync?: {
+    delta_quota: number
+  }
+  users: CarpoolUsageUserSummary[]
 }
 
 // ============================================================================

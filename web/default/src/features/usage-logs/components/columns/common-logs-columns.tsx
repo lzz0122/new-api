@@ -53,7 +53,6 @@ import {
   hasAnyCacheTokens,
   parseLogOther,
   isViolationFeeLog,
-  renderAuditContent,
 } from '../../lib/format'
 import {
   isDisplayableLogType,
@@ -125,13 +124,6 @@ function buildTypeDetailSegments(
   other: LogOtherData | null,
   t: (key: string, opts?: Record<string, unknown>) => string
 ): DetailSegment[] {
-  // Audit (type=3) and login (type=7) logs: render localized content from the
-  // structured op descriptor instead of the raw (English-fallback) content.
-  if (log.type === 3 || log.type === 7) {
-    const text = renderAuditContent(other, t)
-    return text ? [{ text }] : []
-  }
-
   if (log.type === 6) {
     return [{ text: t('Async task refund') }]
   }
@@ -296,7 +288,9 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
   const columns: ColumnDef<UsageLog>[] = [
     {
       accessorKey: 'created_at',
-      header: t('Time'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Time')} />
+      ),
       cell: ({ row }) => {
         const log = row.original
         const timestamp = row.getValue('created_at') as number
@@ -324,6 +318,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       },
       enableHiding: false,
       size: 180,
+      meta: { label: t('Time') },
     },
   ]
 
@@ -331,8 +326,10 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
     columns.push(
       {
         id: 'channel',
-        header: t('Channel'),
         accessorFn: (row) => row.channel,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('Channel')} />
+        ),
         cell: function ChannelCell({ row }) {
           const { sensitiveVisible, setAffinityTarget, setAffinityDialogOpen } =
             useUsageLogsContext()
@@ -485,11 +482,14 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             </TooltipProvider>
           )
         },
+        meta: { label: t('Channel') },
       },
       {
         id: 'user',
-        header: t('User'),
         accessorFn: (row) => row.username,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('User')} />
+        ),
         cell: function UserCell({ row }) {
           const { sensitiveVisible, setSelectedUserId, setUserInfoDialogOpen } =
             useUsageLogsContext()
@@ -539,13 +539,16 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             </button>
           )
         },
+        meta: { label: t('User') },
       }
     )
   }
 
   columns.push({
     accessorKey: 'token_name',
-    header: t('Token'),
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title={t('Token')} />
+    ),
     cell: function TokenNameCell({ row }) {
       const { sensitiveVisible } = useUsageLogsContext()
       const log = row.original
@@ -595,12 +598,16 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         </div>
       )
     },
+    meta: { label: t('Token') },
     size: 160,
   })
+
   columns.push(
     {
       accessorKey: 'model_name',
-      header: t('Model'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Model')} />
+      ),
       cell: function ModelCell({ row }) {
         const log = row.original
         if (!isDisplayableLogType(log.type)) return null
@@ -616,11 +623,14 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </div>
         )
       },
-      meta: { mobileTitle: true },
+      meta: { label: t('Model'), mobileTitle: true },
     },
+
     {
       accessorKey: 'use_time',
-      header: t('Timing'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Timing')} />
+      ),
       cell: ({ row }) => {
         const log = row.original
         if (!isTimingLogType(log.type)) return null
@@ -724,11 +734,14 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </div>
         )
       },
+      meta: { label: t('Timing') },
     },
 
     {
       accessorKey: 'prompt_tokens',
-      header: 'Tokens',
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title='Tokens' />
+      ),
       cell: ({ row }) => {
         const log = row.original
         if (!isDisplayableLogType(log.type)) return null
@@ -772,11 +785,14 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </div>
         )
       },
+      meta: { label: 'Tokens' },
     },
 
     {
       accessorKey: 'quota',
-      header: t('Cost'),
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title={t('Cost')} />
+      ),
       cell: ({ row }) => {
         const log = row.original
         if (!isDisplayableLogType(log.type)) return null
@@ -824,6 +840,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </div>
         )
       },
+      meta: { label: t('Cost') },
     },
 
     {
@@ -881,6 +898,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </>
         )
       },
+      meta: { label: t('Details') },
       size: 180,
       maxSize: 200,
     }

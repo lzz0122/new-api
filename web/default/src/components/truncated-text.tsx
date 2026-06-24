@@ -15,8 +15,19 @@ export function TruncatedText({
   side = 'top',
 }: TruncatedTextProps) {
   return (
-    <TruncatedCell className={cn(maxWidth, className)} side={side}>
-      {text}
-    </TruncatedCell>
+    <TooltipProvider delay={300}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span className={cn('block truncate', maxWidth, className)} />
+          }
+        >
+          {text}
+        </TooltipTrigger>
+        <TooltipContent side={side} className='max-w-xs break-all'>
+          {text}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }

@@ -40,6 +40,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import { Combobox } from '@/components/ui/combobox'
+import { type ComboboxInputOption } from '@/components/ui/combobox-input'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -246,7 +248,7 @@ function GroupSection(props: GroupSectionProps) {
                     props.onUpdate(rule._id, 'visible', v === 'visible')
                   }
                 >
-                  <SelectTrigger className='w-[130px]'>
+                  <SelectTrigger className='w-[150px]'>
                     <SelectValue>
                       <StatusBadge
                         label={rule.visible ? t('Extra visible') : t('Hidden')}

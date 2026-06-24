@@ -187,7 +187,7 @@ export const CHANNEL_OPTIONS = [
   {
     value: 57,
     color: 'blue',
-    label: 'ChatGPT Subscription (Codex)',
+    label: 'Codex (OpenAI OAuth)',
   },
 ];
 

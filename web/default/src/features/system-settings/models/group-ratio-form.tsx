@@ -78,6 +78,92 @@ type GroupRatioFormProps = {
   isSaving: boolean
 }
 
+function parseJsonObject(value: string): Record<string, unknown> {
+  if (!value?.trim()) return {}
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return {}
+    }
+    return parsed as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
+function parseJsonStringArray(value: string): string[] {
+  if (!value?.trim()) return []
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((item): item is string => typeof item === 'string')
+  } catch {
+    return []
+  }
+}
+
+function addOptionValue(target: Set<string>, value: string) {
+  const trimmed = value.trim()
+  if (trimmed) target.add(trimmed)
+}
+
+function stripSpecialUsablePrefix(value: string) {
+  if (value.startsWith('+:') || value.startsWith('-:') || value.startsWith('=:')) {
+    return value.slice(2)
+  }
+  return value
+}
+
+function createGroupOptions(values: Set<string>): ComboboxInputOption[] {
+  return Array.from(values)
+    .sort((a, b) => a.localeCompare(b))
+    .map((value) => ({ value, label: value }))
+}
+
+function buildSpecialUsableOptions(values: GroupFormValues): {
+  userGroupOptions: ComboboxInputOption[]
+  pricingGroupOptions: ComboboxInputOption[]
+} {
+  const userGroups = new Set<string>()
+  const pricingGroups = new Set<string>()
+
+  for (const group of Object.keys(parseJsonObject(values.TopupGroupRatio))) {
+    addOptionValue(userGroups, group)
+  }
+
+  for (const group of Object.keys(parseJsonObject(values.GroupGroupRatio))) {
+    addOptionValue(userGroups, group)
+  }
+
+  for (const group of Object.keys(parseJsonObject(values.GroupRatio))) {
+    addOptionValue(pricingGroups, group)
+  }
+
+  for (const group of Object.keys(parseJsonObject(values.UserUsableGroups))) {
+    addOptionValue(pricingGroups, group)
+  }
+
+  for (const group of parseJsonStringArray(values.AutoGroups)) {
+    addOptionValue(pricingGroups, group)
+  }
+
+  const specialRules = parseJsonObject(values.GroupSpecialUsableGroup)
+  for (const [userGroup, rules] of Object.entries(specialRules)) {
+    addOptionValue(userGroups, userGroup)
+    if (typeof rules !== 'object' || rules === null || Array.isArray(rules)) {
+      continue
+    }
+    for (const rawTargetGroup of Object.keys(rules)) {
+      addOptionValue(pricingGroups, stripSpecialUsablePrefix(rawTargetGroup))
+    }
+  }
+
+  return {
+    userGroupOptions: createGroupOptions(userGroups),
+    pricingGroupOptions: createGroupOptions(pricingGroups),
+  }
+}
+
 export const GroupRatioForm = memo(function GroupRatioForm({
   form,
   onSave,
@@ -317,7 +403,7 @@ export const GroupRatioForm = memo(function GroupRatioForm({
                   </FormControl>
                   <FormDescription>
                     {t(
-                      'Nested JSON defining per-group rules for adding (+:), removing (-:), or appending usable groups.'
+                      'Nested JSON defining per-group rules for adding (+:), removing (-:), only allowing (=:), or appending usable groups.'
                     )}
                   </FormDescription>
                   <FormMessage />
@@ -667,6 +753,10 @@ vip          0.5     ${t('No')}                ${t('Assigned by administrator on
     "+:premium": "${t('Premium plan, half price')}",
     "-:default": "remove",
     "special": "${t('Special group')}"
+  },
+  "jhl": {
+    "=:拼车": "拼车分组",
+    "=:jhl": "jhl分组"
   }
 }`}</GuideCodeBlock>
                 <p className='text-muted-foreground text-sm leading-6'>

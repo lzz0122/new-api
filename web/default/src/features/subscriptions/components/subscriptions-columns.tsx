@@ -38,20 +38,24 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
       {
         accessorFn: (row) => row.plan.id,
         id: 'id',
-        header: t('ID'),
-        meta: { mobileHidden: true },
+        meta: { label: t('ID'), mobileHidden: true },
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('ID')} />
+        ),
         cell: ({ row }) => <TableId value={row.original.plan.id} />,
         size: 60,
       },
       {
         accessorFn: (row) => row.plan.title,
         id: 'title',
-        header: t('Plan'),
-        meta: { mobileTitle: true },
+        meta: { label: t('Plan'), mobileTitle: true },
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('Plan')} />
+        ),
         cell: ({ row }) => {
           const plan = row.original.plan
           return (
-            <div className='max-w-full min-w-0'>
+            <div className='max-w-[200px]'>
               <div className='truncate font-medium'>{plan.title}</div>
               {plan.subtitle && (
                 <div className='text-muted-foreground truncate text-xs'>
@@ -66,7 +70,10 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
       {
         accessorFn: (row) => row.plan.price_amount,
         id: 'price',
-        header: t('Price'),
+        meta: { label: t('Price') },
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('Price')} />
+        ),
         cell: ({ row }) => (
           <span className='font-semibold text-emerald-600'>
             ${Number(row.original.plan.price_amount || 0).toFixed(2)}
@@ -76,7 +83,10 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
       },
       {
         id: 'duration',
-        header: t('Validity'),
+        meta: { label: t('Validity') },
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('Validity')} />
+        ),
         cell: ({ row }) => (
           <span className='text-muted-foreground'>
             {formatDuration(row.original.plan, t)}
@@ -86,8 +96,10 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
       },
       {
         id: 'reset',
-        header: t('Quota Reset'),
-        meta: { mobileHidden: true },
+        meta: { label: t('Quota Reset'), mobileHidden: true },
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('Quota Reset')} />
+        ),
         cell: ({ row }) => (
           <span className='text-muted-foreground'>
             {formatResetPeriod(row.original.plan, t)}
@@ -98,8 +110,10 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
       {
         accessorFn: (row) => row.plan.sort_order,
         id: 'sort_order',
-        header: t('Priority'),
-        meta: { mobileHidden: true },
+        meta: { label: t('Priority'), mobileHidden: true },
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('Priority')} />
+        ),
         cell: ({ row }) => (
           <span className='text-muted-foreground'>
             {row.original.plan.sort_order}
@@ -110,34 +124,36 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
       {
         accessorFn: (row) => row.plan.enabled,
         id: 'enabled',
-        header: t('Status'),
-        meta: { mobileBadge: true },
+        meta: { label: t('Status'), mobileBadge: true },
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('Status')} />
+        ),
         cell: ({ row }) =>
           row.original.plan.enabled ? (
             <StatusBadge
               label={t('Enable')}
               variant='success'
               copyable={false}
-              className='-ml-1.5'
             />
           ) : (
             <StatusBadge
               label={t('Disable')}
               variant='neutral'
               copyable={false}
-              className='-ml-1.5'
             />
           ),
         size: 80,
       },
       {
         id: 'payment',
-        header: t('Payment Channel'),
-        meta: { mobileHidden: true },
+        meta: { label: t('Payment Channel'), mobileHidden: true },
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('Payment Channel')} />
+        ),
         cell: ({ row }) => {
           const plan = row.original.plan
           return (
-            <BadgeCell>
+            <div className='flex gap-1'>
               {plan.stripe_price_id && (
                 <StatusBadge
                   label='Stripe'
@@ -155,15 +171,17 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
                   copyable={false}
                 />
               )}
-            </BadgeCell>
+            </div>
           )
         },
         size: 140,
       },
       {
         id: 'total_amount',
-        header: t('Plan Quota'),
-        meta: { mobileHidden: true },
+        meta: { label: t('Received amount'), mobileHidden: true },
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('Received amount')} />
+        ),
         cell: ({ row }) => {
           const total = Number(row.original.plan.total_amount || 0)
           return (
@@ -176,8 +194,10 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
       },
       {
         id: 'upgrade_group',
-        header: t('Upgrade Group'),
-        meta: { mobileHidden: true },
+        meta: { label: t('Upgrade Group'), mobileHidden: true },
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('Upgrade Group')} />
+        ),
         cell: ({ row }) => {
           const group = row.original.plan.upgrade_group
           if (!group) {
@@ -185,17 +205,12 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
               <span className='text-muted-foreground'>{t('No Upgrade')}</span>
             )
           }
-          return (
-            <BadgeCell>
-              <GroupBadge group={group} />
-            </BadgeCell>
-          )
+          return <GroupBadge group={group} />
         },
         size: 120,
       },
       {
         id: 'actions',
-        header: () => t('Actions'),
         cell: ({ row }) => <DataTableRowActions row={row} />,
         meta: { pinned: 'right' as const },
       },

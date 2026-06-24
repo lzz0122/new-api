@@ -54,7 +54,12 @@ export function DataTableHeader<TData>({
               className={getColumnClassName?.(header.column.id, 'header')}
               style={getHeaderSizeStyle(header, applyHeaderSize)}
             >
-              {renderHeaderContent(header)}
+              {header.isPlaceholder
+                ? null
+                : flexRender(
+                    header.column.columnDef.header,
+                    header.getContext()
+                  )}
             </TableHead>
           ))}
         </TableRow>

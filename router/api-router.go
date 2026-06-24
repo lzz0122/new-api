@@ -131,6 +131,7 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/topup", controller.GetAllTopUps)
 				adminRoute.POST("/topup/complete", controller.AdminCompleteTopUp)
 				adminRoute.GET("/search", controller.SearchUsers)
+				adminRoute.GET("/group_options", controller.GetUserGroupOptions)
 				adminRoute.GET("/:id/oauth/bindings", controller.GetUserOAuthBindingsByAdmin)
 				adminRoute.DELETE("/:id/oauth/bindings/:provider_id", controller.UnbindCustomOAuthByAdmin)
 				adminRoute.DELETE("/:id/bindings/:binding_type", controller.AdminClearUserBinding)
@@ -193,11 +194,11 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.DELETE("/channel_affinity_cache", controller.ClearChannelAffinityCache)
 			optionRoute.POST("/rest_model_ratio", controller.ResetModelRatio)
 			optionRoute.POST("/migrate_console_setting", controller.MigrateConsoleSetting) // 用于迁移检测的旧键，下个版本会删除
-			optionRoute.GET("/waffo-pancake/catalog", controller.ListWaffoPancakeCatalog)
+			optionRoute.POST("/waffo-pancake/catalog", controller.ListWaffoPancakeCatalog)
 			optionRoute.POST("/waffo-pancake/pair", controller.CreateWaffoPancakePair)
 			optionRoute.POST("/waffo-pancake/save", controller.SaveWaffoPancake)
 			optionRoute.POST("/waffo-pancake/subscription-product", controller.CreateWaffoPancakeSubscriptionProduct)
-			optionRoute.GET("/waffo-pancake/subscription-product-options", controller.ListWaffoPancakeSubscriptionProductOptions)
+			optionRoute.POST("/waffo-pancake/subscription-product-options", controller.ListWaffoPancakeSubscriptionProductOptions)
 		}
 
 		// Custom OAuth provider management (root only)
@@ -271,6 +272,11 @@ func SetApiRouter(router *gin.Engine) {
 		logRoute.DELETE("/", middleware.RootAuth(), controller.DeleteHistoryLogs)
 		logRoute.GET("/stat", middleware.AdminAuth(), controller.GetLogsStat)
 		logRoute.GET("/self/stat", middleware.UserAuth(), controller.GetLogsSelfStat)
+		logRoute.GET("/upstream-usage", middleware.UserAuth(), controller.GetSub2APIUsage)
+		logRoute.GET("/carnival", middleware.UserAuth(), controller.GetCarnivalStatus)
+		logRoute.GET("/carnival/history", middleware.UserAuth(), controller.GetCarnivalHistory)
+		logRoute.POST("/carnival/start", middleware.AdminAuth(), controller.StartCarnival)
+		logRoute.POST("/carnival/finish", middleware.AdminAuth(), controller.FinishCarnival)
 		logRoute.GET("/channel_affinity_usage_cache", middleware.AdminAuth(), controller.GetChannelAffinityUsageCacheStats)
 		logRoute.GET("/search", middleware.AdminAuth(), controller.SearchAllLogs)
 		logRoute.GET("/self", middleware.UserAuth(), controller.GetUserLogs)
@@ -303,6 +309,18 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			logRoute.GET("/token", middleware.TokenAuthReadOnly(), controller.GetLogByKey)
 		}
+
+		carpoolUsageRoute := apiRouter.Group("/carpool-usage")
+		carpoolUsageRoute.Use(middleware.UserAuth())
+		{
+			carpoolUsageRoute.GET("/groups", controller.GetCarpoolGroups)
+			carpoolUsageRoute.GET("/status", controller.GetCarpoolStatus)
+			carpoolUsageRoute.GET("/summary", controller.GetCarpoolUsageSummary)
+			carpoolUsageRoute.GET("/history", controller.GetCarpoolHistory)
+			carpoolUsageRoute.POST("/start", middleware.AdminAuth(), controller.StartCarpool)
+			carpoolUsageRoute.POST("/finish", middleware.AdminAuth(), controller.FinishCarpool)
+		}
+
 		groupRoute := apiRouter.Group("/group")
 		groupRoute.Use(middleware.AdminAuth())
 		{

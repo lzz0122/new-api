@@ -160,10 +160,6 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     data: logs as Record<string, unknown>[],
     columns: columns as ColumnDef<Record<string, unknown>>[],
     columnFilters,
-    columnVisibilityStorageKey: getColumnVisibilityStorageKey(
-      logCategory,
-      isAdmin
-    ),
     pagination,
     enableRowSelection: false,
     onPaginationChange,

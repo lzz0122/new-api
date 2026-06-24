@@ -106,7 +106,6 @@ export interface ChannelOtherSettings {
   upstream_model_update_ignored_models?: string[]
   upstream_model_update_last_check_time?: number
   upstream_model_update_last_detected_models?: string[]
-  advanced_custom?: AdvancedCustomConfig
 }
 
 export interface AdvancedCustomConfig {
@@ -181,7 +180,6 @@ export interface ChannelTestResponse {
   success: boolean
   message?: string
   error_code?: string
-  time?: number
   data?: {
     response_time?: number
     error?: string
