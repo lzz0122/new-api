@@ -423,7 +423,8 @@ func filterRoutableChannels(group string, channels []*Channel) []*Channel {
 
 func getSatisfiedAbilities(group string, modelName string) ([]Ability, error) {
 	var abilities []Ability
-	query := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, modelName, true).
+	groupColumn := GroupColumn()
+	query := DB.Where(groupColumn+" = ? and model = ? and enabled = ?", group, modelName, true).
 		Order("priority DESC").Order("weight DESC")
 	if err := query.Find(&abilities).Error; err != nil {
 		return nil, err
@@ -435,7 +436,7 @@ func getSatisfiedAbilities(group string, modelName string) ([]Ability, error) {
 	if normalizedModel == modelName {
 		return abilities, nil
 	}
-	query = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, normalizedModel, true).
+	query = DB.Where(groupColumn+" = ? and model = ? and enabled = ?", group, normalizedModel, true).
 		Order("priority DESC").Order("weight DESC")
 	if err := query.Find(&abilities).Error; err != nil {
 		return nil, err

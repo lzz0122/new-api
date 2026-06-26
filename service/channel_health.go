@@ -326,10 +326,10 @@ func ListDueChannelHealthStates(limit int) ([]model.ChannelHealthState, error) {
 	var states []model.ChannelHealthState
 	err := model.DB.
 		Where(
-			"(status = ? AND ((probe_interval_seconds IS NOT NULL AND probe_interval_seconds >= 0 AND (CASE WHEN updated_at >= last_probe_at AND updated_at >= last_failure_at THEN updated_at WHEN last_probe_at > last_failure_at THEN last_probe_at WHEN last_failure_at > updated_at THEN last_failure_at ELSE updated_at END) + probe_interval_seconds <= ?) OR (probe_interval_seconds IS NULL AND ? >= 0 AND (CASE WHEN updated_at >= last_probe_at AND updated_at >= last_failure_at THEN updated_at WHEN last_probe_at > last_failure_at THEN last_probe_at WHEN last_failure_at > updated_at THEN last_failure_at ELSE updated_at END) + ? <= ?))) OR (status = ? AND probe_started_at > 0 AND probe_started_at <= ?)",
+			"(status = ? AND ((probe_interval_seconds IS NOT NULL AND probe_interval_seconds >= 0) OR (probe_interval_seconds IS NULL AND ? >= 0)) AND ((next_probe_at > 0 AND next_probe_at <= ?) OR (next_probe_at <= 0 AND (CASE WHEN updated_at >= last_probe_at AND updated_at >= last_failure_at THEN updated_at WHEN last_probe_at > last_failure_at THEN last_probe_at WHEN last_failure_at > updated_at THEN last_failure_at ELSE updated_at END) + CASE WHEN probe_interval_seconds IS NOT NULL THEN probe_interval_seconds ELSE ? END <= ?))) OR (status = ? AND probe_started_at > 0 AND probe_started_at <= ?)",
 			model.ChannelHealthStatusUnhealthy,
-			now,
 			operation_setting.GetChannelHealthSetting().ProbeIntervalSeconds,
+			now,
 			operation_setting.GetChannelHealthSetting().ProbeIntervalSeconds,
 			now,
 			model.ChannelHealthStatusProbing,
@@ -1054,6 +1054,47 @@ func UpdateChannelHealthProbeModels(channel *model.Channel, probeModels []string
 	return AttachChannelHealthProbeModelResults(decorateChannelHealthState(result), channel), err
 }
 
+func DeferChannelHealthProbe(channelID int, nextProbeAt int64, reason string) (*model.ChannelHealthState, error) {
+	if channelID <= 0 {
+		return nil, errors.New("invalid channel id")
+	}
+	now := common.GetTimestamp()
+	threshold := model.GetChannelHealthMinimumPositiveFailureThreshold(channelID)
+	var result *model.ChannelHealthState
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		state, err := getOrCreateChannelHealthStateForUpdate(tx, channelID, now, threshold)
+		if err != nil {
+			return err
+		}
+		fromStatus := state.Status
+		if nextProbeAt <= now {
+			interval := effectiveProbeIntervalSeconds(state)
+			if interval >= 0 {
+				nextProbeAt = now + int64(interval)
+			} else {
+				nextProbeAt = 0
+			}
+		}
+		state.Status = model.ChannelHealthStatusUnhealthy
+		state.FailureThreshold = threshold
+		state.LastProbeAt = now
+		state.ProbeStartedAt = 0
+		state.NextProbeAt = nextProbeAt
+		state.LastErrorCode = "cpa_quota_deferred"
+		state.LastError = common.LocalLogPreview(reason)
+		state.UpdatedAt = now
+		if err := tx.Save(state).Error; err != nil {
+			return err
+		}
+		if err := createChannelHealthEvent(tx, state, ChannelHealthContext{}, model.ChannelHealthEventProbeDeferred, fromStatus, state.Status, 0, state.LastErrorCode, state.LastError); err != nil {
+			return err
+		}
+		result = state
+		return nil
+	})
+	return decorateChannelHealthState(result), err
+}
+
 func UpdateChannelHealthGroupFailureThreshold(group string, threshold int) (*model.ChannelHealthGroupSetting, error) {
 	group = strings.TrimSpace(group)
 	if group == "" {
@@ -1263,8 +1304,12 @@ func decorateChannelHealthState(state *model.ChannelHealthState) *model.ChannelH
 	state.EffectiveProbeInterval = effectiveProbeIntervalSeconds(state)
 	state.AutoProbeEnabled = state.EffectiveProbeInterval >= 0
 	state.ConfiguredProbeModels = model.DecodeChannelHealthProbeModels(state.ProbeModels)
-	if state.Status == model.ChannelHealthStatusUnhealthy {
-		state.NextProbeAt = nextProbeAtForUnhealthyState(state, now)
+	if !state.AutoProbeEnabled {
+		state.NextProbeAt = 0
+	} else if state.Status == model.ChannelHealthStatusUnhealthy {
+		if state.NextProbeAt <= 0 {
+			state.NextProbeAt = nextProbeAtForUnhealthyState(state, now)
+		}
 	} else if state.Status == model.ChannelHealthStatusProbing {
 		state.NextProbeAt = 0
 	} else {
@@ -1283,11 +1328,15 @@ func GetChannelAffectedGroups(channelID int) []string {
 	if channelID <= 0 {
 		return nil
 	}
+	groupColumn := strings.TrimSpace(model.GroupColumn())
+	if groupColumn == "" {
+		groupColumn = "`group`"
+	}
 	var groups []string
 	_ = model.DB.Model(&model.Ability{}).
 		Where("channel_id = ?", channelID).
-		Distinct(model.GroupColumn()).
-		Pluck(model.GroupColumn(), &groups).Error
+		Distinct(groupColumn).
+		Pluck(groupColumn, &groups).Error
 	sort.Strings(groups)
 	return groups
 }

@@ -225,6 +225,16 @@ func runChannelHealthProbe(channel *model.Channel, testUserID int, manual bool) 
 	if len(probeModels) == 0 {
 		return nil, nil, fmt.Errorf("channel #%d has no probe models", channel.Id)
 	}
+	if !manual {
+		health, apiErr, handled, err := service.HandleCPAQuotaHealthBeforeProbe(context.Background(), channel, probeModels)
+		if handled {
+			var result *testResult
+			if apiErr != nil {
+				result = &testResult{newAPIError: apiErr}
+			}
+			return health, result, err
+		}
+	}
 	_, _ = service.MarkChannelHealthProbing(channel.Id, manual)
 	var firstSuccess *testResult
 	var lastFailure *testResult
