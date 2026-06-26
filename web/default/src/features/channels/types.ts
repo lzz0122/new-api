@@ -34,6 +34,34 @@ export const channelInfoSchema = z.object({
 
 export type ChannelInfo = z.infer<typeof channelInfoSchema>
 
+export const channelHealthSchema = z.object({
+  channel_id: z.number(),
+  status: z.string().default('healthy'),
+  failure_count: z.number().default(0),
+  failure_threshold: z.number().default(3),
+  probe_interval_seconds: z.number().default(600),
+  last_success_at: z.number().default(0),
+  last_failure_at: z.number().default(0),
+  last_probe_at: z.number().default(0),
+  next_probe_at: z.number().default(0),
+  probe_started_at: z.number().default(0),
+  probe_attempts: z.number().default(0),
+  last_status_code: z.number().default(0),
+  last_error_code: z.string().default(''),
+  last_error: z.string().default(''),
+  last_model: z.string().default(''),
+  last_group: z.string().default(''),
+  last_token_id: z.number().default(0),
+  last_request_id: z.string().default(''),
+  manual_probe_requested_at: z.number().default(0),
+  updated_at: z.number().default(0),
+  affected_groups: z.string().optional(),
+  next_probe_remaining_seconds: z.number().default(0),
+  auto_probe_enabled: z.boolean().default(true),
+})
+
+export type ChannelHealth = z.infer<typeof channelHealthSchema>
+
 export const channelSchema = z.object({
   id: z.number(),
   type: z.number(),
@@ -71,6 +99,7 @@ export const channelSchema = z.object({
     multi_key_mode: 'random',
   }),
   settings: z.string().default('{}'), // other_settings JSON
+  health: channelHealthSchema.nullish(),
 })
 
 export type Channel = z.infer<typeof channelSchema>
@@ -146,6 +175,61 @@ export interface ChannelTestResponse {
   data?: {
     response_time?: number
     error?: string
+  }
+}
+
+export interface ChannelHealthProbeResponse {
+  success: boolean
+  message?: string
+  error_code?: string
+  data?: ChannelHealth
+}
+
+export interface ChannelHealthGroupThresholdResponse {
+  success: boolean
+  message?: string
+  data?: {
+    group: string
+    failure_threshold: number
+    updated_at: number
+  }
+}
+
+export interface UserChannelStatusItem {
+  channel_id: number
+  channel_name: string
+  channel_status: number
+  health_status: string
+  display_status: 'normal' | 'error' | 'disabled' | string
+  next_probe_at: number
+  next_probe_remaining_seconds: number
+  failure_count: number
+  failure_threshold: number
+  probe_interval_seconds: number
+  last_failure_at: number
+  last_success_at: number
+  auto_probe_enabled: boolean
+  can_probe: boolean
+  models: string[]
+}
+
+export interface UserChannelStatusGroup {
+  group: string
+  group_name: string
+  failure_threshold: number
+  total: number
+  available_count: number
+  error_count: number
+  display_status: 'normal' | 'error' | string
+  channels: UserChannelStatusItem[]
+}
+
+export interface UserChannelStatusResponse {
+  success: boolean
+  message?: string
+  data?: {
+    groups: UserChannelStatusGroup[]
+    updated_at: number
   }
 }
 

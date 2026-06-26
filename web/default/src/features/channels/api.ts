@@ -24,6 +24,8 @@ import type {
   BatchSetTagParams,
   Channel,
   ChannelBalanceResponse,
+  ChannelHealthGroupThresholdResponse,
+  ChannelHealthProbeResponse,
   ChannelTestResponse,
   CopyChannelParams,
   CopyChannelResponse,
@@ -36,6 +38,7 @@ import type {
   SearchChannelsParams,
   SearchChannelsResponse,
   TagOperationParams,
+  UserChannelStatusResponse,
 } from './types'
 
 const channelActionConfig = (
@@ -194,6 +197,46 @@ export async function testChannel(
     `/api/channel/test/${id}`,
     channelActionConfig({ params })
   )
+  return res.data
+}
+
+export async function probeChannelHealth(
+  id: number
+): Promise<ChannelHealthProbeResponse> {
+  const res = await api.post(
+    `/api/channel/${id}/health/probe`,
+    undefined,
+    channelActionConfig()
+  )
+  return res.data
+}
+
+export async function updateChannelHealthProbeInterval(
+  id: number,
+  probeIntervalSeconds: number
+): Promise<ChannelHealthProbeResponse> {
+  const res = await api.post(
+    `/api/channel/${id}/health/probe_interval`,
+    { probe_interval_seconds: probeIntervalSeconds },
+    channelActionConfig()
+  )
+  return res.data
+}
+
+export async function updateChannelHealthGroupThreshold(
+  group: string,
+  failureThreshold: number
+): Promise<ChannelHealthGroupThresholdResponse> {
+  const res = await api.post(
+    '/api/channel-health/group-threshold',
+    { group, failure_threshold: failureThreshold },
+    channelActionConfig()
+  )
+  return res.data
+}
+
+export async function getUserChannelStatus(): Promise<UserChannelStatusResponse> {
+  const res = await api.get('/api/channel-status')
   return res.data
 }
 

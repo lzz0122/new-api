@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -18,12 +19,18 @@ import (
 
 func resetTokenGroupHealth(t *testing.T) {
 	t.Helper()
+	channelHealthSetting := operation_setting.GetChannelHealthSetting()
+	originalChannelHealthEnabled := channelHealthSetting.Enabled
+	channelHealthSetting.Enabled = false
 	tokenGroupHealth.Lock()
 	tokenGroupHealth.states = map[string]tokenGroupHealthState{}
 	tokenGroupHealth.Unlock()
 	tokenGroupPreferredChannels.Lock()
 	tokenGroupPreferredChannels.channels = map[string][]int{}
 	tokenGroupPreferredChannels.Unlock()
+	tokenGroupLastSuccessfulChannels.Lock()
+	tokenGroupLastSuccessfulChannels.channels = map[string]int{}
+	tokenGroupLastSuccessfulChannels.Unlock()
 	tokenGroupProbeSchedules.Lock()
 	tokenGroupProbeSchedules.schedules = map[string]tokenGroupProbeSchedule{}
 	tokenGroupProbeSchedules.Unlock()
@@ -31,12 +38,16 @@ func resetTokenGroupHealth(t *testing.T) {
 	tokenGroupFailureObservations.observations = map[string]tokenGroupFailureObservation{}
 	tokenGroupFailureObservations.Unlock()
 	t.Cleanup(func() {
+		channelHealthSetting.Enabled = originalChannelHealthEnabled
 		tokenGroupHealth.Lock()
 		tokenGroupHealth.states = map[string]tokenGroupHealthState{}
 		tokenGroupHealth.Unlock()
 		tokenGroupPreferredChannels.Lock()
 		tokenGroupPreferredChannels.channels = map[string][]int{}
 		tokenGroupPreferredChannels.Unlock()
+		tokenGroupLastSuccessfulChannels.Lock()
+		tokenGroupLastSuccessfulChannels.channels = map[string]int{}
+		tokenGroupLastSuccessfulChannels.Unlock()
 		tokenGroupProbeSchedules.Lock()
 		tokenGroupProbeSchedules.schedules = map[string]tokenGroupProbeSchedule{}
 		tokenGroupProbeSchedules.Unlock()

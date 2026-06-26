@@ -68,6 +68,24 @@ const monitoringSchema = z
         .int()
         .min(1, 'Interval must be at least 1 minute'),
     }),
+    channel_health_setting: z.object({
+      enabled: z.boolean(),
+      failure_threshold: z.coerce
+        .number()
+        .int()
+        .min(1, 'Failure threshold must be at least 1'),
+      probe_interval_seconds: z.coerce
+        .number()
+        .int('Probe interval must be an integer'),
+      probe_batch_size: z.coerce
+        .number()
+        .int()
+        .min(1, 'Probe batch size must be at least 1'),
+      manual_probe_cooldown_seconds: z.coerce
+        .number()
+        .int()
+        .min(1, 'Manual probe cooldown must be at least 1 second'),
+    }),
   })
   .superRefine((values, ctx) => {
     const disableParsed = parseHttpStatusCodeRules(
@@ -111,6 +129,11 @@ type MonitoringSettingsSectionProps = {
     AutomaticRetryStatusCodes: string
     'monitor_setting.auto_test_channel_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
+    'channel_health_setting.enabled': boolean
+    'channel_health_setting.failure_threshold': number
+    'channel_health_setting.probe_interval_seconds': number
+    'channel_health_setting.probe_batch_size': number
+    'channel_health_setting.manual_probe_cooldown_seconds': number
   }
 }
 
@@ -128,6 +151,11 @@ type NormalizedMonitoringValues = {
   AutomaticRetryStatusCodes: string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
+  'channel_health_setting.enabled': boolean
+  'channel_health_setting.failure_threshold': number
+  'channel_health_setting.probe_interval_seconds': number
+  'channel_health_setting.probe_batch_size': number
+  'channel_health_setting.manual_probe_cooldown_seconds': number
 }
 
 const buildFormDefaults = (
@@ -147,6 +175,15 @@ const buildFormDefaults = (
       defaults['monitor_setting.auto_test_channel_enabled'],
     auto_test_channel_minutes:
       defaults['monitor_setting.auto_test_channel_minutes'],
+  },
+  channel_health_setting: {
+    enabled: defaults['channel_health_setting.enabled'],
+    failure_threshold: defaults['channel_health_setting.failure_threshold'],
+    probe_interval_seconds:
+      defaults['channel_health_setting.probe_interval_seconds'],
+    probe_batch_size: defaults['channel_health_setting.probe_batch_size'],
+    manual_probe_cooldown_seconds:
+      defaults['channel_health_setting.manual_probe_cooldown_seconds'],
   },
 })
 
@@ -170,6 +207,15 @@ const normalizeDefaults = (
     defaults['monitor_setting.auto_test_channel_enabled'],
   'monitor_setting.auto_test_channel_minutes':
     defaults['monitor_setting.auto_test_channel_minutes'],
+  'channel_health_setting.enabled': defaults['channel_health_setting.enabled'],
+  'channel_health_setting.failure_threshold':
+    defaults['channel_health_setting.failure_threshold'],
+  'channel_health_setting.probe_interval_seconds':
+    defaults['channel_health_setting.probe_interval_seconds'],
+  'channel_health_setting.probe_batch_size':
+    defaults['channel_health_setting.probe_batch_size'],
+  'channel_health_setting.manual_probe_cooldown_seconds':
+    defaults['channel_health_setting.manual_probe_cooldown_seconds'],
 })
 
 const normalizeFormValues = (
@@ -192,6 +238,15 @@ const normalizeFormValues = (
     values.monitor_setting.auto_test_channel_enabled,
   'monitor_setting.auto_test_channel_minutes':
     values.monitor_setting.auto_test_channel_minutes,
+  'channel_health_setting.enabled': values.channel_health_setting.enabled,
+  'channel_health_setting.failure_threshold':
+    values.channel_health_setting.failure_threshold,
+  'channel_health_setting.probe_interval_seconds':
+    values.channel_health_setting.probe_interval_seconds,
+  'channel_health_setting.probe_batch_size':
+    values.channel_health_setting.probe_batch_size,
+  'channel_health_setting.manual_probe_cooldown_seconds':
+    values.channel_health_setting.manual_probe_cooldown_seconds,
 })
 
 export function MonitoringSettingsSection({
@@ -296,6 +351,143 @@ export function MonitoringSettingsSection({
                   <FormDescription>
                     {t('How frequently the system tests all channels')}
                   </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          <div className='grid gap-6 md:grid-cols-2'>
+            <FormField
+              control={form.control}
+              name='channel_health_setting.enabled'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Global channel health')}</FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Track channel availability globally instead of per API key'
+                      )}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='channel_health_setting.failure_threshold'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Failure threshold')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={1}
+                      step={1}
+                      {...safeNumberFieldProps(field)}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t('Consecutive failures before a channel is unhealthy')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          <div className='grid gap-6 md:grid-cols-3'>
+            <FormField
+              control={form.control}
+              name='channel_health_setting.probe_interval_seconds'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Probe interval (seconds)')}</FormLabel>
+                  <FormControl>
+                    {(() => {
+                      const inputValue =
+                        typeof field.value === 'number' ||
+                        typeof field.value === 'string'
+                          ? field.value
+                          : ''
+                      return (
+                        <Input
+                          type='number'
+                          step={1}
+                          value={inputValue}
+                          onChange={(event) => {
+                            const value = event.target.value
+                            if (
+                              value === '' ||
+                              value === '-' ||
+                              value === '+'
+                            ) {
+                              field.onChange(value)
+                              return
+                            }
+                            const next = event.target.valueAsNumber
+                            if (Number.isFinite(next)) {
+                              field.onChange(next)
+                            }
+                          }}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                        />
+                      )
+                    })()}
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Set to a negative value to disable automatic probing; administrators can still probe manually'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='channel_health_setting.probe_batch_size'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Probe batch size')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={1}
+                      step={1}
+                      {...safeNumberFieldProps(field)}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='channel_health_setting.manual_probe_cooldown_seconds'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Manual probe cooldown')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      min={1}
+                      step={1}
+                      {...safeNumberFieldProps(field)}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}

@@ -931,31 +931,26 @@ func testAllChannels(notify bool) error {
 			result := testChannel(channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
 			tok := time.Now()
 			milliseconds := tok.Sub(tik).Milliseconds()
-
-			shouldBanChannel := false
-			newAPIError := result.newAPIError
-			// request error disables the channel
-			if newAPIError != nil {
-				shouldBanChannel = service.ShouldDisableChannel(result.newAPIError)
+			if result.localErr != nil && result.newAPIError == nil {
+				common.SysLog(fmt.Sprintf("channel #%d automatic test skipped: %s", channel.Id, result.localErr.Error()))
+				continue
 			}
 
-			// 当错误检查通过，才检查响应时间
-			if common.AutomaticDisableChannelEnabled && !shouldBanChannel {
+			newAPIError := result.newAPIError
+			if newAPIError == nil && common.AutomaticDisableChannelEnabled {
 				if milliseconds > disableThreshold {
 					err := fmt.Errorf("响应时间 %.2fs 超过阈值 %.2fs", float64(milliseconds)/1000.0, float64(disableThreshold)/1000.0)
 					newAPIError = types.NewOpenAIError(err, types.ErrorCodeChannelResponseTimeExceeded, http.StatusRequestTimeout)
-					shouldBanChannel = true
 				}
 			}
 
-			// disable channel
-			if isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {
+			if newAPIError != nil {
+				service.RecordChannelFailure(result.context, channel, newAPIError)
 				processChannelError(result.context, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
-			}
-
-			// enable channel
-			if !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
-				service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
+			} else if !isChannelEnabled {
+				_, _ = service.RecordChannelProbeSuccess(result.context, channel)
+			} else {
+				service.RecordChannelSuccess(result.context, channel.Id)
 			}
 
 			channel.UpdateResponseTime(milliseconds)

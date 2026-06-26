@@ -59,6 +59,16 @@ const OPERATIONS_SECTIONS = [
             settings['monitor_setting.auto_test_channel_enabled'],
           'monitor_setting.auto_test_channel_minutes':
             settings['monitor_setting.auto_test_channel_minutes'],
+          'channel_health_setting.enabled':
+            settings['channel_health_setting.enabled'],
+          'channel_health_setting.failure_threshold':
+            settings['channel_health_setting.failure_threshold'],
+          'channel_health_setting.probe_interval_seconds':
+            settings['channel_health_setting.probe_interval_seconds'],
+          'channel_health_setting.probe_batch_size':
+            settings['channel_health_setting.probe_batch_size'],
+          'channel_health_setting.manual_probe_cooldown_seconds':
+            settings['channel_health_setting.manual_probe_cooldown_seconds'],
         }}
       />
     ),

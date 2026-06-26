@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
@@ -112,6 +113,10 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 		channels = group2model2channels[group][normalizedModel]
 	}
 
+	if len(channels) == 0 {
+		return nil, nil
+	}
+	channels = filterRoutableChannelIDs(group, channels)
 	if len(channels) == 0 {
 		return nil, nil
 	}
@@ -228,6 +233,10 @@ func GetSatisfiedChannels(group string, model string) ([]*Channel, error) {
 	if len(channelIDs) == 0 {
 		return nil, nil
 	}
+	channelIDs = filterRoutableChannelIDs(group, channelIDs)
+	if len(channelIDs) == 0 {
+		return nil, nil
+	}
 
 	channels := make([]*Channel, 0, len(channelIDs))
 	for _, channelID := range channelIDs {
@@ -325,7 +334,66 @@ func getSatisfiedChannelsFromDB(group string, modelName string) ([]*Channel, err
 		}
 		ordered = append(ordered, channel)
 	}
-	return ordered, nil
+	return filterRoutableChannels(group, ordered), nil
+}
+
+func filterRoutableChannelIDs(group string, channelIDs []int) []int {
+	if len(channelIDs) == 0 || !operation_setting.GetChannelHealthSetting().Enabled {
+		return channelIDs
+	}
+	var states []ChannelHealthState
+	err := DB.Where("channel_id IN ?", channelIDs).Find(&states).Error
+	if err != nil || len(states) == 0 {
+		return channelIDs
+	}
+	threshold := GetChannelHealthGroupFailureThreshold(group)
+	unhealthySet := make(map[int]struct{}, len(states))
+	for _, state := range states {
+		if IsChannelHealthUnavailableForThreshold(&state, threshold) {
+			unhealthySet[state.ChannelId] = struct{}{}
+		}
+	}
+	if len(unhealthySet) == 0 {
+		return channelIDs
+	}
+	filtered := make([]int, 0, len(channelIDs))
+	for _, id := range channelIDs {
+		if _, unhealthy := unhealthySet[id]; unhealthy {
+			continue
+		}
+		filtered = append(filtered, id)
+	}
+	return filtered
+}
+
+func filterRoutableChannels(group string, channels []*Channel) []*Channel {
+	if len(channels) == 0 || !operation_setting.GetChannelHealthSetting().Enabled {
+		return channels
+	}
+	channelIDs := make([]int, 0, len(channels))
+	for _, channel := range channels {
+		if channel != nil {
+			channelIDs = append(channelIDs, channel.Id)
+		}
+	}
+	routableIDs := filterRoutableChannelIDs(group, channelIDs)
+	if len(routableIDs) == len(channelIDs) {
+		return channels
+	}
+	routableSet := make(map[int]struct{}, len(routableIDs))
+	for _, id := range routableIDs {
+		routableSet[id] = struct{}{}
+	}
+	filtered := make([]*Channel, 0, len(channels))
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		if _, ok := routableSet[channel.Id]; ok {
+			filtered = append(filtered, channel)
+		}
+	}
+	return filtered
 }
 
 func getSatisfiedAbilities(group string, modelName string) ([]Ability, error) {
@@ -441,21 +509,74 @@ func CacheUpdateChannelStatus(id int, status int) {
 	}
 	channelSyncLock.Lock()
 	defer channelSyncLock.Unlock()
+	var target *Channel
 	if channel, ok := channelsIDM[id]; ok {
 		channel.Status = status
+		target = channel
 	}
-	if status != common.ChannelStatusEnabled {
-		// delete the channel from group2model2channels
-		for group, model2channels := range group2model2channels {
-			for model, channels := range model2channels {
-				for i, channelId := range channels {
-					if channelId == id {
-						// remove the channel from the slice
-						group2model2channels[group][model] = append(channels[:i], channels[i+1:]...)
-						break
-					}
+
+	removeChannelFromGroupModelCacheLocked(id)
+	if status == common.ChannelStatusEnabled && target != nil {
+		addChannelToGroupModelCacheLocked(target)
+	}
+}
+
+func removeChannelFromGroupModelCacheLocked(id int) {
+	for group, model2channels := range group2model2channels {
+		for modelName, channels := range model2channels {
+			filtered := channels[:0]
+			for _, channelId := range channels {
+				if channelId != id {
+					filtered = append(filtered, channelId)
 				}
 			}
+			group2model2channels[group][modelName] = filtered
+		}
+	}
+}
+
+func addChannelToGroupModelCacheLocked(channel *Channel) {
+	if channel == nil || channel.Status != common.ChannelStatusEnabled {
+		return
+	}
+	if group2model2channels == nil {
+		group2model2channels = make(map[string]map[string][]int)
+	}
+	groups := strings.Split(channel.Group, ",")
+	models := strings.Split(channel.Models, ",")
+	for _, group := range groups {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			continue
+		}
+		if group2model2channels[group] == nil {
+			group2model2channels[group] = make(map[string][]int)
+		}
+		for _, modelName := range models {
+			modelName = strings.TrimSpace(modelName)
+			if modelName == "" {
+				continue
+			}
+			channels := group2model2channels[group][modelName]
+			exists := false
+			for _, id := range channels {
+				if id == channel.Id {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				channels = append(channels, channel.Id)
+			}
+			sort.Slice(channels, func(i, j int) bool {
+				left := channelsIDM[channels[i]]
+				right := channelsIDM[channels[j]]
+				if left == nil || right == nil {
+					return channels[i] < channels[j]
+				}
+				return left.GetPriority() > right.GetPriority()
+			})
+			group2model2channels[group][modelName] = channels
 		}
 	}
 }

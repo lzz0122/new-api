@@ -84,6 +84,11 @@ export function useSidebarData(): SidebarData {
             icon: Key,
           },
           {
+            title: t('Channel Status'),
+            url: '/channel-status',
+            icon: Radio,
+          },
+          {
             title: t('Usage Logs'),
             url: '/usage-logs/common',
             icon: FileText,

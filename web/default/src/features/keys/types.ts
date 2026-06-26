@@ -100,6 +100,9 @@ export interface ApiKeyGroupRoute {
   group: string
   order: number
   failover_strategy?: 'fallback' | 'return_error'
+  // Legacy fields may still be present on existing tokens. The global channel
+  // health policy owns these decisions now, so the key editor no longer writes
+  // or exposes them.
   timeout_seconds?: number
   cooldown_seconds?: number
   recovery_strategy?: 'probe_then_switch' | 'sticky'
@@ -112,13 +115,13 @@ export interface ApiKeyGroupRoute {
 export interface ApiKeyGroupConfig {
   groups: ApiKeyGroupRoute[]
   failover_strategy: 'fallback' | 'return_error'
-  timeout_seconds: number
-  cooldown_seconds: number
-  recovery_strategy: 'probe_then_switch' | 'sticky'
-  failure_detection_strategy: 'one' | 'half' | 'all' | 'ratio'
-  failure_detection_ratio: number
-  recovery_detection_strategy: 'one' | 'half' | 'all' | 'ratio'
-  recovery_detection_ratio: number
+  timeout_seconds?: number
+  cooldown_seconds?: number
+  recovery_strategy?: 'probe_then_switch' | 'sticky'
+  failure_detection_strategy?: 'one' | 'half' | 'all' | 'ratio'
+  failure_detection_ratio?: number
+  recovery_detection_strategy?: 'one' | 'half' | 'all' | 'ratio'
+  recovery_detection_ratio?: number
 }
 
 // ============================================================================

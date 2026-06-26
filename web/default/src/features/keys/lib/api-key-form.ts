@@ -47,30 +47,10 @@ export function getApiKeyFormSchema(t: TFunction) {
             group: z.string().min(1),
             order: z.number().min(1),
             failover_strategy: z.enum(['fallback', 'return_error']).optional(),
-            timeout_seconds: z.number().min(0).max(600).optional(),
-            cooldown_seconds: z.number().min(1).max(86400).optional(),
-            recovery_strategy: z
-              .enum(['probe_then_switch', 'sticky'])
-              .optional(),
-            failure_detection_strategy: z
-              .enum(['one', 'half', 'all', 'ratio'])
-              .optional(),
-            failure_detection_ratio: z.number().min(0.01).max(1).optional(),
-            recovery_detection_strategy: z
-              .enum(['one', 'half', 'all', 'ratio'])
-              .optional(),
-            recovery_detection_ratio: z.number().min(0.01).max(1).optional(),
           })
         )
         .min(1, t('Please select at least one group')),
       failover_strategy: z.enum(['fallback', 'return_error']),
-      timeout_seconds: z.number().min(0).max(600),
-      cooldown_seconds: z.number().min(1).max(86400),
-      recovery_strategy: z.enum(['probe_then_switch', 'sticky']),
-      failure_detection_strategy: z.enum(['one', 'half', 'all', 'ratio']),
-      failure_detection_ratio: z.number().min(0.01).max(1),
-      recovery_detection_strategy: z.enum(['one', 'half', 'all', 'ratio']),
-      recovery_detection_ratio: z.number().min(0.01).max(1),
       cross_group_retry: z.boolean().optional(),
       tokenCount: z.number().min(1).optional(),
     })
@@ -108,26 +88,12 @@ export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   group: DEFAULT_GROUP,
   group_routes: [{ group: DEFAULT_GROUP, order: 1 }],
   failover_strategy: 'fallback',
-  timeout_seconds: 0,
-  cooldown_seconds: 600,
-  recovery_strategy: 'probe_then_switch',
-  failure_detection_strategy: 'one',
-  failure_detection_ratio: 0.5,
-  recovery_detection_strategy: 'one',
-  recovery_detection_ratio: 0.5,
   cross_group_retry: true,
   tokenCount: 1,
 }
 
 const DEFAULT_GROUP_ROUTE_SETTINGS = {
   failover_strategy: 'fallback' as const,
-  timeout_seconds: 0,
-  cooldown_seconds: 600,
-  recovery_strategy: 'probe_then_switch' as const,
-  failure_detection_strategy: 'one' as const,
-  failure_detection_ratio: 0.5,
-  recovery_detection_strategy: 'one' as const,
-  recovery_detection_ratio: 0.5,
 }
 
 function defaultGroupRoute(group: string, order: number): ApiKeyGroupRoute {
@@ -164,18 +130,6 @@ export function transformFormDataToPayload(
   const groupConfig: ApiKeyGroupConfig = {
     groups: routes,
     failover_strategy: firstRoute.failover_strategy || data.failover_strategy,
-    timeout_seconds: firstRoute.timeout_seconds ?? data.timeout_seconds ?? 0,
-    cooldown_seconds:
-      firstRoute.cooldown_seconds ?? data.cooldown_seconds ?? 600,
-    recovery_strategy: firstRoute.recovery_strategy || data.recovery_strategy,
-    failure_detection_strategy:
-      firstRoute.failure_detection_strategy || data.failure_detection_strategy,
-    failure_detection_ratio:
-      firstRoute.failure_detection_ratio ?? data.failure_detection_ratio ?? 0.5,
-    recovery_detection_strategy:
-      firstRoute.recovery_detection_strategy || data.recovery_detection_strategy,
-    recovery_detection_ratio:
-      firstRoute.recovery_detection_ratio ?? data.recovery_detection_ratio ?? 0.5,
   }
   return {
     name: data.name,
@@ -223,13 +177,6 @@ export function transformApiKeyToFormDefaults(
     group: routes[0]?.group || apiKey.group || DEFAULT_GROUP,
     group_routes: routes,
     failover_strategy: groupConfig.failover_strategy,
-    timeout_seconds: groupConfig.timeout_seconds,
-    cooldown_seconds: groupConfig.cooldown_seconds,
-    recovery_strategy: groupConfig.recovery_strategy,
-    failure_detection_strategy: groupConfig.failure_detection_strategy,
-    failure_detection_ratio: groupConfig.failure_detection_ratio,
-    recovery_detection_strategy: groupConfig.recovery_detection_strategy,
-    recovery_detection_ratio: groupConfig.recovery_detection_ratio,
     cross_group_retry: !!apiKey.cross_group_retry,
     tokenCount: 1,
   }
@@ -246,24 +193,6 @@ export function normalizeGroupRoutes(
       order: route.order > 0 ? route.order : index + 1,
       failover_strategy:
         route.failover_strategy || DEFAULT_GROUP_ROUTE_SETTINGS.failover_strategy,
-      timeout_seconds:
-        route.timeout_seconds ?? DEFAULT_GROUP_ROUTE_SETTINGS.timeout_seconds,
-      cooldown_seconds:
-        route.cooldown_seconds ?? DEFAULT_GROUP_ROUTE_SETTINGS.cooldown_seconds,
-      recovery_strategy:
-        route.recovery_strategy || DEFAULT_GROUP_ROUTE_SETTINGS.recovery_strategy,
-      failure_detection_strategy:
-        route.failure_detection_strategy ||
-        DEFAULT_GROUP_ROUTE_SETTINGS.failure_detection_strategy,
-      failure_detection_ratio:
-        route.failure_detection_ratio ??
-        DEFAULT_GROUP_ROUTE_SETTINGS.failure_detection_ratio,
-      recovery_detection_strategy:
-        route.recovery_detection_strategy ||
-        DEFAULT_GROUP_ROUTE_SETTINGS.recovery_detection_strategy,
-      recovery_detection_ratio:
-        route.recovery_detection_ratio ??
-        DEFAULT_GROUP_ROUTE_SETTINGS.recovery_detection_ratio,
     }))
     .filter((route) => {
       if (!route.group || seen.has(route.group)) return false
@@ -282,13 +211,6 @@ function parseGroupConfig(apiKey: ApiKey): ApiKeyGroupConfig {
   const fallback: ApiKeyGroupConfig = {
     groups: normalizeGroupRoutes(undefined, apiKey.group || DEFAULT_GROUP),
     failover_strategy: 'fallback',
-    timeout_seconds: 0,
-    cooldown_seconds: 600,
-    recovery_strategy: 'probe_then_switch',
-    failure_detection_strategy: 'one',
-    failure_detection_ratio: 0.5,
-    recovery_detection_strategy: 'one',
-    recovery_detection_ratio: 0.5,
   }
   if (!apiKey.group_config) return fallback
   try {
@@ -298,49 +220,10 @@ function parseGroupConfig(apiKey: ApiKey): ApiKeyGroupConfig {
         parsed.failover_strategy === 'return_error'
           ? 'return_error'
           : 'fallback',
-      timeout_seconds:
-        typeof parsed.timeout_seconds === 'number'
-          ? Math.max(0, parsed.timeout_seconds)
-          : 0,
-      cooldown_seconds:
-        typeof parsed.cooldown_seconds === 'number'
-          ? Math.max(1, parsed.cooldown_seconds)
-          : 600,
-      recovery_strategy:
-        parsed.recovery_strategy === 'sticky' ? 'sticky' : 'probe_then_switch',
-      failure_detection_strategy: isDetectionStrategy(
-        parsed.failure_detection_strategy
-      )
-        ? parsed.failure_detection_strategy
-        : 'one',
-      failure_detection_ratio:
-        typeof parsed.failure_detection_ratio === 'number'
-          ? clampRatio(parsed.failure_detection_ratio)
-          : 0.5,
-      recovery_detection_strategy: isDetectionStrategy(
-        parsed.recovery_detection_strategy
-      )
-        ? parsed.recovery_detection_strategy
-        : 'one',
-      recovery_detection_ratio:
-        typeof parsed.recovery_detection_ratio === 'number'
-          ? clampRatio(parsed.recovery_detection_ratio)
-          : 0.5,
     }
     const routes = (parsed.groups || []).map((route) => ({
       ...route,
       failover_strategy: route.failover_strategy || cfg.failover_strategy,
-      timeout_seconds: route.timeout_seconds ?? cfg.timeout_seconds,
-      cooldown_seconds: route.cooldown_seconds ?? cfg.cooldown_seconds,
-      recovery_strategy: route.recovery_strategy || cfg.recovery_strategy,
-      failure_detection_strategy:
-        route.failure_detection_strategy || cfg.failure_detection_strategy,
-      failure_detection_ratio:
-        route.failure_detection_ratio ?? cfg.failure_detection_ratio,
-      recovery_detection_strategy:
-        route.recovery_detection_strategy || cfg.recovery_detection_strategy,
-      recovery_detection_ratio:
-        route.recovery_detection_ratio ?? cfg.recovery_detection_ratio,
     }))
     return {
       groups: normalizeGroupRoutes(routes, apiKey.group || DEFAULT_GROUP),
@@ -349,15 +232,4 @@ function parseGroupConfig(apiKey: ApiKey): ApiKeyGroupConfig {
   } catch {
     return fallback
   }
-}
-
-function isDetectionStrategy(
-  value: unknown
-): value is 'one' | 'half' | 'all' | 'ratio' {
-  return value === 'one' || value === 'half' || value === 'all' || value === 'ratio'
-}
-
-function clampRatio(value: number): number {
-  if (!Number.isFinite(value) || value <= 0 || value > 1) return 0.5
-  return value
 }

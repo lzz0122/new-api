@@ -25,6 +25,7 @@ import {
   ChevronDown,
   ChevronRight,
   ListOrdered,
+  Loader2,
   Shuffle,
   SlidersHorizontal,
 } from 'lucide-react'
@@ -51,7 +52,7 @@ import { ProviderBadge } from '@/components/provider-badge'
 import { StatusBadge, StatusBadgeList } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
 import { TruncatedText } from '@/components/truncated-text'
-import { getCodexUsage } from '../api'
+import { getCodexUsage, probeChannelHealth } from '../api'
 import { CHANNEL_STATUS_CONFIG, MODEL_FETCHABLE_TYPES } from '../constants'
 import {
   formatBalance,
@@ -96,6 +97,112 @@ function parseIonetMeta(otherInfo: string | null | undefined): null | {
     return null
   }
   return null
+}
+
+function formatHealthCountdown(seconds: number | undefined) {
+  const value = Math.max(0, Math.floor(seconds ?? 0))
+  const minutes = Math.floor(value / 60)
+  const remainingSeconds = value % 60
+  if (minutes <= 0) return `${remainingSeconds}s`
+  return `${minutes}m ${remainingSeconds.toString().padStart(2, '0')}s`
+}
+
+function hasChannelHealthError(channel: Channel) {
+  const status = channel.health?.status
+  return status === 'unhealthy' || status === 'probing'
+}
+
+function ChannelHealthStatusBadge({
+  channel,
+  label,
+}: {
+  channel: Channel
+  label: string
+}) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const [isProbing, setIsProbing] = useState(false)
+  const health = channel.health
+  const healthLabel =
+    health?.status === 'probing'
+      ? t('Probing')
+      : health?.auto_probe_enabled === false
+        ? t('Auto probe disabled')
+        : `${t('Error')} ${formatHealthCountdown(
+            health?.next_probe_remaining_seconds
+          )}`
+
+  const handleProbe = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    setIsProbing(true)
+    try {
+      const response = await probeChannelHealth(channel.id)
+      if (response.success) {
+        toast.success(t('Channel recovered'))
+      } else {
+        toast.error(response.message || t('Channel probe failed'))
+      }
+      queryClient.invalidateQueries({ queryKey: ['channels'] })
+    } catch (_error) {
+      toast.error(t('Channel probe failed'))
+    } finally {
+      setIsProbing(false)
+    }
+  }
+
+  return (
+    <TooltipProvider delay={100}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type='button'
+              variant='ghost'
+              size='sm'
+              className='h-auto rounded-full p-0'
+              onClick={handleProbe}
+              disabled={isProbing}
+            />
+          }
+        >
+          <StatusBadge
+            label={isProbing ? t('Probing') : healthLabel}
+            variant={health?.status === 'probing' ? 'warning' : 'danger'}
+            size='sm'
+            icon={isProbing ? Loader2 : AlertTriangle}
+            copyable={false}
+            className={isProbing ? '[&_svg]:animate-spin' : undefined}
+          />
+        </TooltipTrigger>
+        <TooltipContent side='top' className='max-w-xs'>
+          <div className='space-y-1 text-xs'>
+            <div>{label}</div>
+            {health?.failure_count !== undefined && (
+              <div>
+                {t('Failures:')} {health.failure_count}/
+                {health.failure_threshold ?? 3}
+              </div>
+            )}
+            {health?.last_error && (
+              <div>
+                {t('Reason:')} {truncateText(health.last_error, 160)}
+              </div>
+            )}
+            {health?.next_probe_at ? (
+              <div>
+                {t('Next probe:')}{' '}
+                {formatTimestampToDate(health.next_probe_at)}
+              </div>
+            ) : null}
+            {health?.auto_probe_enabled === false && (
+              <div>{t('Automatic probing is disabled')}</div>
+            )}
+            <div>{t('Click to probe now')}</div>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
 }
 
 /**
@@ -766,6 +873,10 @@ export function useChannelsColumns(): ColumnDef<Channel>[] {
           isMultiKey && keySize > 0
             ? `${t(config.label)} (${enabledCount}/${keySize})`
             : t(config.label)
+
+        if (hasChannelHealthError(channel)) {
+          return <ChannelHealthStatusBadge channel={channel} label={label} />
+        }
 
         // Auto-disabled: show reason and time tooltip
         if (status === 3) {

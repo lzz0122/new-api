@@ -157,6 +157,7 @@ func GetAllChannels(c *gin.Context) {
 		}
 	}
 
+	service.AttachChannelHealth(channelData)
 	for _, datum := range channelData {
 		clearChannelInfo(datum)
 	}
@@ -318,6 +319,8 @@ func SearchChannels(c *gin.Context) {
 		channelData = filtered
 	}
 
+	service.AttachChannelHealth(channelData)
+
 	// calculate type counts for search results
 	typeCounts := make(map[int64]int64)
 	for _, channel := range channelData {
@@ -391,6 +394,7 @@ func GetChannel(c *gin.Context) {
 		return
 	}
 	if channel != nil {
+		service.AttachSingleChannelHealth(channel)
 		clearChannelInfo(channel)
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -978,6 +982,9 @@ func UpdateChannel(c *gin.Context) {
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	if originChannel.Status != common.ChannelStatusEnabled && channel.Status == common.ChannelStatusEnabled {
+		service.RecordChannelSuccess(c, channel.Id)
 	}
 	model.InitChannelCache()
 	service.ResetProxyClientCache()

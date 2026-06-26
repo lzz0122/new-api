@@ -226,6 +226,12 @@ func SetApiRouter(router *gin.Engine) {
 			ratioSyncRoute.GET("/channels", controller.GetSyncableChannels)
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
 		}
+		apiRouter.GET("/channel-status", middleware.UserAuth(), controller.GetUserChannelStatus)
+		channelHealthRoute := apiRouter.Group("/channel-health")
+		channelHealthRoute.Use(middleware.AdminAuth())
+		{
+			channelHealthRoute.POST("/group-threshold", controller.UpdateChannelHealthGroupThreshold)
+		}
 		channelRoute := apiRouter.Group("/channel")
 		channelRoute.Use(middleware.AdminAuth())
 		{
@@ -234,6 +240,8 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.GET("/models", controller.ChannelListModels)
 			channelRoute.GET("/models_enabled", controller.EnabledListModels)
 			channelRoute.GET("/:id", controller.GetChannel)
+			channelRoute.POST("/:id/health/probe", controller.ProbeChannelHealth)
+			channelRoute.POST("/:id/health/probe_interval", controller.UpdateChannelHealthProbeInterval)
 			channelRoute.POST("/:id/key", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.SecureVerificationRequired(), controller.GetChannelKey)
 			channelRoute.GET("/test", controller.TestAllChannels)
 			channelRoute.GET("/test/:id", controller.TestChannel)
