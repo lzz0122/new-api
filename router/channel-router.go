@@ -44,6 +44,7 @@ var channelPermissionRoutes = []permissionRoute{
 	{method: http.MethodGet, path: "/ops", permission: authz.ChannelRead, handler: controller.GetChannelOps},
 	{method: http.MethodGet, path: "/:id", permission: authz.ChannelRead, handler: controller.GetChannel},
 	{method: http.MethodPost, path: "/:id/health/probe", permission: authz.ChannelOperate, handler: controller.ProbeChannelHealth},
+	{method: http.MethodPost, path: "/:id/health/healthy", permission: authz.ChannelOperate, handler: controller.MarkChannelHealthHealthy},
 	{method: http.MethodPost, path: "/:id/health/probe_interval", permission: authz.ChannelOperate, handler: controller.UpdateChannelHealthProbeInterval},
 	{method: http.MethodPost, path: "/:id/health/probe_models", permission: authz.ChannelOperate, handler: controller.UpdateChannelHealthProbeModels},
 	{method: http.MethodGet, path: "/test", permission: authz.ChannelOperate, handler: controller.TestAllChannels},

@@ -60,6 +60,7 @@ import { SectionPageLayout } from '@/components/layout'
 import { StatusBadge } from '@/components/status-badge'
 import {
   getUserChannelStatus,
+  markChannelHealthHealthy,
   probeChannelHealth,
   updateChannelHealthGroupThreshold,
   updateChannelHealthProbeInterval,
@@ -324,10 +325,12 @@ function ChannelGroupTable({
   nowSeconds,
   isAdmin,
   probingChannelID,
+  markingHealthyChannelID,
   savingProbeIntervalID,
   savingProbeModelsID,
   savingGroupThreshold,
   onProbe,
+  onMarkHealthy,
   onProbeIntervalChange,
   onProbeModelsChange,
   onGroupThresholdChange,
@@ -336,10 +339,12 @@ function ChannelGroupTable({
   nowSeconds: number
   isAdmin: boolean
   probingChannelID: number | null
+  markingHealthyChannelID: number | null
   savingProbeIntervalID: number | null
   savingProbeModelsID: number | null
   savingGroupThreshold: string | null
   onProbe: (item: UserChannelStatusItem) => void
+  onMarkHealthy: (item: UserChannelStatusItem) => void
   onProbeIntervalChange: (item: UserChannelStatusItem, value: number) => void
   onProbeModelsChange: (item: UserChannelStatusItem, models: string[]) => void
   onGroupThresholdChange: (group: UserChannelStatusGroup, value: number) => void
@@ -403,7 +408,7 @@ function ChannelGroupTable({
               <TableHead className='w-[22%]'>{t('Probe models')}</TableHead>
               <TableHead className='w-48'>{t('Last failure')}</TableHead>
               <TableHead className='w-36'>{t('Probe interval')}</TableHead>
-              <TableHead className='w-20 text-right'>{t('Actions')}</TableHead>
+              <TableHead className='w-28 text-right'>{t('Actions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -449,32 +454,64 @@ function ChannelGroupTable({
                     </span>
                   )}
                 </TableCell>
-                <TableCell className='w-20 text-right'>
+                <TableCell className='w-28'>
                   {isAdmin && item.can_probe && (
-                    <TooltipProvider delay={100}>
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              type='button'
-                              variant='ghost'
-                              size='icon-sm'
-                              onClick={() => onProbe(item)}
-                              disabled={probingChannelID === item.channel_id}
-                            />
-                          }
-                        >
-                          {probingChannelID === item.channel_id ? (
-                            <Loader2 className='animate-spin' />
-                          ) : (
-                            <RefreshCw />
-                          )}
-                        </TooltipTrigger>
-                        <TooltipContent side='left'>
-                          {t('Probe now')}
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                    <div className='flex justify-end gap-1'>
+                      <TooltipProvider delay={100}>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                type='button'
+                                variant='ghost'
+                                size='icon-sm'
+                                onClick={() => onProbe(item)}
+                                disabled={
+                                  probingChannelID === item.channel_id ||
+                                  markingHealthyChannelID === item.channel_id
+                                }
+                              />
+                            }
+                          >
+                            {probingChannelID === item.channel_id ? (
+                              <Loader2 className='animate-spin' />
+                            ) : (
+                              <RefreshCw />
+                            )}
+                          </TooltipTrigger>
+                          <TooltipContent side='left'>
+                            {t('Probe now')}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                      <TooltipProvider delay={100}>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                type='button'
+                                variant='ghost'
+                                size='icon-sm'
+                                onClick={() => onMarkHealthy(item)}
+                                disabled={
+                                  probingChannelID === item.channel_id ||
+                                  markingHealthyChannelID === item.channel_id
+                                }
+                              />
+                            }
+                          >
+                            {markingHealthyChannelID === item.channel_id ? (
+                              <Loader2 className='animate-spin' />
+                            ) : (
+                              <CheckCircle2 />
+                            )}
+                          </TooltipTrigger>
+                          <TooltipContent side='left'>
+                            {t('Mark healthy')}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
                   )}
                 </TableCell>
               </TableRow>
@@ -505,6 +542,9 @@ export function ChannelStatus() {
     Math.floor(Date.now() / 1000)
   )
   const [probingChannelID, setProbingChannelID] = useState<number | null>(null)
+  const [markingHealthyChannelID, setMarkingHealthyChannelID] = useState<
+    number | null
+  >(null)
   const [savingProbeIntervalID, setSavingProbeIntervalID] = useState<
     number | null
   >(null)
@@ -544,6 +584,27 @@ export function ChannelStatus() {
     },
     onSettled: () => {
       setProbingChannelID(null)
+    },
+  })
+  const markHealthyMutation = useMutation({
+    mutationFn: async (item: UserChannelStatusItem) => {
+      setMarkingHealthyChannelID(item.channel_id)
+      return markChannelHealthHealthy(item.channel_id)
+    },
+    onSuccess: (response) => {
+      if (response.success) {
+        toast.success(t('Channel marked healthy'))
+      } else {
+        toast.error(response.message || t('Failed to mark channel healthy'))
+      }
+      queryClient.invalidateQueries({ queryKey: ['channel-status'] })
+      queryClient.invalidateQueries({ queryKey: ['channels'] })
+    },
+    onError: () => {
+      toast.error(t('Failed to mark channel healthy'))
+    },
+    onSettled: () => {
+      setMarkingHealthyChannelID(null)
     },
   })
   const probeIntervalMutation = useMutation({
@@ -686,10 +747,12 @@ export function ChannelStatus() {
               nowSeconds={displayNowSeconds}
               isAdmin={isAdmin}
               probingChannelID={probingChannelID}
+              markingHealthyChannelID={markingHealthyChannelID}
               savingProbeIntervalID={savingProbeIntervalID}
               savingProbeModelsID={savingProbeModelsID}
               savingGroupThreshold={savingGroupThreshold}
               onProbe={(item) => probeMutation.mutate(item)}
+              onMarkHealthy={(item) => markHealthyMutation.mutate(item)}
               onProbeIntervalChange={(item, value) =>
                 probeIntervalMutation.mutate({
                   channelID: item.channel_id,

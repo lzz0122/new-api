@@ -255,6 +255,17 @@ export async function probeChannelHealth(
   return res.data
 }
 
+export async function markChannelHealthHealthy(
+  id: number
+): Promise<ChannelHealthProbeResponse> {
+  const res = await api.post(
+    `/api/channel/${id}/health/healthy`,
+    undefined,
+    channelActionConfig()
+  )
+  return res.data
+}
+
 export async function updateChannelHealthProbeInterval(
   id: number,
   probeIntervalSeconds: number

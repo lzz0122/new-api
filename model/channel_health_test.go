@@ -31,3 +31,19 @@ func TestIsChannelHealthUnavailableForGroupStateIgnoresOtherGroups(t *testing.T)
 		t.Fatal("non-positive threshold should keep the group routable")
 	}
 }
+
+func TestIsChannelHealthUnavailableForGroupStateUsesGlobalProbeWhenLastGroupEmpty(t *testing.T) {
+	globalState := &ChannelHealthState{
+		Status:       ChannelHealthStatusUnhealthy,
+		FailureCount: 3,
+		LastGroup:    "",
+	}
+
+	if !IsChannelHealthUnavailableForGroupState(globalState, nil, "lzz_plus", 3) {
+		t.Fatal("global probe failure should make affected groups unavailable after threshold")
+	}
+
+	if IsChannelHealthUnavailableForGroupState(globalState, nil, "lzz_plus", 0) {
+		t.Fatal("non-positive group threshold should still keep the group routable")
+	}
+}

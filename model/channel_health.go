@@ -24,6 +24,7 @@ const (
 	ChannelHealthEventProbeDeferred   = "probe_deferred"
 	ChannelHealthEventRecovered       = "recovered"
 	ChannelHealthEventManualProbe     = "manual_probe"
+	ChannelHealthEventManualHealthy   = "manual_healthy"
 )
 
 type ChannelHealthState struct {
@@ -209,7 +210,7 @@ func IsChannelHealthUnavailableForGroupState(globalState *ChannelHealthState, gr
 	}
 	lastGroup := strings.TrimSpace(globalState.LastGroup)
 	group = strings.TrimSpace(group)
-	if lastGroup == "" || lastGroup != group {
+	if lastGroup != "" && lastGroup != group {
 		return false
 	}
 	return IsChannelHealthUnavailableForThreshold(globalState, threshold)

@@ -6,11 +6,13 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -127,4 +129,43 @@ func TestTestAllChannelsRejectsExistingActiveTask(t *testing.T) {
 	require.Equal(t, http.StatusConflict, recorder.Code)
 	require.Contains(t, recorder.Body.String(), existing.TaskID)
 	require.Contains(t, recorder.Body.String(), "已有通道测试任务正在运行或等待中")
+}
+
+func TestChannelHealthProbeEndpointTypeUsesResponsesForCPAChannel(t *testing.T) {
+	baseURL := "http://cli-proxy-api:8317"
+	channel := &model.Channel{
+		Type:    constant.ChannelTypeOpenAI,
+		BaseURL: &baseURL,
+	}
+
+	endpointType := channelHealthProbeEndpointType(channel, "gpt-5.5")
+
+	require.Equal(t, string(constant.EndpointTypeOpenAIResponse), endpointType)
+	require.True(t, shouldUseStreamForChannelHealthProbe(channel, endpointType))
+}
+
+func TestChannelHealthProbeEndpointTypeKeepsDefaultForOpenAIChannel(t *testing.T) {
+	baseURL := "https://api.openai.com"
+	channel := &model.Channel{
+		Type:    constant.ChannelTypeOpenAI,
+		BaseURL: &baseURL,
+	}
+
+	endpointType := channelHealthProbeEndpointType(channel, "gpt-5.5")
+
+	require.Empty(t, endpointType)
+	require.False(t, shouldUseStreamForChannelHealthProbe(channel, endpointType))
+}
+
+func TestChannelHealthProbeEndpointTypeKeepsCompactEndpoint(t *testing.T) {
+	baseURL := "http://cli-proxy-api:8317"
+	channel := &model.Channel{
+		Type:    constant.ChannelTypeOpenAI,
+		BaseURL: &baseURL,
+	}
+
+	endpointType := channelHealthProbeEndpointType(channel, "gpt-5.5"+ratio_setting.CompactModelSuffix)
+
+	require.Equal(t, string(constant.EndpointTypeOpenAIResponseCompact), endpointType)
+	require.False(t, shouldUseStreamForChannelHealthProbe(channel, endpointType))
 }
