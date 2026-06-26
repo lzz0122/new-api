@@ -16,7 +16,7 @@ func setupChannelHealthTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	originalDB := model.DB
 	model.DB = db
-	require.NoError(t, db.AutoMigrate(&model.ChannelHealthState{}, &model.ChannelHealthGroupSetting{}, &model.ChannelHealthEvent{}, &model.Ability{}))
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.ChannelHealthState{}, &model.ChannelHealthGroupState{}, &model.ChannelHealthGroupSetting{}, &model.ChannelHealthEvent{}, &model.Ability{}))
 	t.Cleanup(func() {
 		model.DB = originalDB
 	})

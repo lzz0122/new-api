@@ -26,14 +26,20 @@ var logKeyCol string
 var logGroupCol string
 
 func GroupColumn() string {
-	return commonGroupCol
+	if strings.TrimSpace(commonGroupCol) != "" {
+		return commonGroupCol
+	}
+	if common.UsingPostgreSQL {
+		return `"group"`
+	}
+	return "`group`"
 }
 
 func QualifiedGroupColumn(table string) string {
 	if table == "" {
-		return commonGroupCol
+		return GroupColumn()
 	}
-	return table + "." + commonGroupCol
+	return table + "." + GroupColumn()
 }
 
 func initCol() {

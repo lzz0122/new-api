@@ -21,6 +21,7 @@ const (
 	ChannelHealthEventMarkedUnhealthy = "marked_unhealthy"
 	ChannelHealthEventProbeSuccess    = "probe_success"
 	ChannelHealthEventProbeFailure    = "probe_failure"
+	ChannelHealthEventProbeDeferred   = "probe_deferred"
 	ChannelHealthEventRecovered       = "recovered"
 	ChannelHealthEventManualProbe     = "manual_probe"
 )

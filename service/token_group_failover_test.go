@@ -215,6 +215,101 @@ func TestTokenGroupDetectionThresholds(t *testing.T) {
 	require.True(t, recoveryThresholdReached(model.TokenGroupDetectionStrategyRatio, 0.68, 3, 4))
 }
 
+func TestChannelHealthTokenGroupFailureKeepsAvailablePrimaryGroup(t *testing.T) {
+	resetTokenGroupHealth(t)
+	db := setupChannelHealthTestDB(t)
+	withChannelHealthSetting(t, func(setting *operation_setting.ChannelHealthSetting) {
+		setting.Enabled = true
+		setting.FailureThreshold = 3
+	})
+	priority := int64(10)
+	weight := uint(100)
+	require.NoError(t, db.Create(&model.Channel{
+		Id:       501,
+		Type:     1,
+		Key:      "test-key",
+		Name:     "primary-channel",
+		Status:   common.ChannelStatusEnabled,
+		Models:   "gpt-test",
+		Group:    "primary",
+		Priority: &priority,
+		Weight:   &weight,
+	}).Error)
+	require.NoError(t, db.Create(&model.Ability{
+		Group:     "primary",
+		Model:     "gpt-test",
+		ChannelId: 501,
+		Enabled:   true,
+		Priority:  &priority,
+		Weight:    weight,
+	}).Error)
+
+	cfg := fallbackTokenGroupConfig("primary", "secondary")
+	ctx := tokenGroupTestContext(t, 121, cfg)
+	common.SetContextKey(ctx, constant.ContextKeyOriginalModel, "gpt-test")
+	MarkRequestChannelFailed(ctx, "primary", "gpt-test", 501)
+	apiErr := types.NewErrorWithStatusCode(errors.New("upstream failed once"), types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
+
+	require.False(t, MarkTokenGroupFailure(ctx, "primary", cfg, apiErr))
+	channel, group, err := CacheGetRandomSatisfiedChannel(&RetryParam{
+		Ctx:        ctx,
+		TokenGroup: "primary",
+		ModelName:  "gpt-test",
+		Retry:      common.GetPointer(0),
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "primary", group)
+	require.NotNil(t, channel)
+	require.Equal(t, 501, channel.Id)
+}
+
+func TestChannelHealthTokenGroupFailureFailsOnlyWhenGroupHasNoRoutableChannels(t *testing.T) {
+	resetTokenGroupHealth(t)
+	db := setupChannelHealthTestDB(t)
+	withChannelHealthSetting(t, func(setting *operation_setting.ChannelHealthSetting) {
+		setting.Enabled = true
+		setting.FailureThreshold = 3
+	})
+	priority := int64(10)
+	weight := uint(100)
+	require.NoError(t, db.Create(&model.Channel{
+		Id:       502,
+		Type:     1,
+		Key:      "test-key",
+		Name:     "primary-channel",
+		Status:   common.ChannelStatusEnabled,
+		Models:   "gpt-test",
+		Group:    "primary",
+		Priority: &priority,
+		Weight:   &weight,
+	}).Error)
+	require.NoError(t, db.Create(&model.Ability{
+		Group:     "primary",
+		Model:     "gpt-test",
+		ChannelId: 502,
+		Enabled:   true,
+		Priority:  &priority,
+		Weight:    weight,
+	}).Error)
+	require.NoError(t, db.Create(&model.ChannelHealthGroupState{
+		ChannelId:     502,
+		GroupName:     "primary",
+		Status:        model.ChannelHealthStatusUnhealthy,
+		FailureCount:  3,
+		LastFailureAt: time.Now().Unix(),
+		UpdatedAt:     time.Now().Unix(),
+	}).Error)
+
+	cfg := fallbackTokenGroupConfig("primary", "secondary")
+	ctx := tokenGroupTestContext(t, 122, cfg)
+	common.SetContextKey(ctx, constant.ContextKeyOriginalModel, "gpt-test")
+	apiErr := types.NewErrorWithStatusCode(errors.New("upstream failed repeatedly"), types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
+
+	require.True(t, MarkTokenGroupFailure(ctx, "primary", cfg, apiErr))
+	require.Contains(t, TokenGroupFailureSummary(ctx), "该分组当前无可用渠道")
+}
+
 func TestHasAvailableLaterTokenGroupSkipsCoolingGroups(t *testing.T) {
 	resetTokenGroupHealth(t)
 	cfg := fallbackTokenGroupConfig("primary", "secondary", "third")

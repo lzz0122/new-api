@@ -486,21 +486,14 @@ func shouldMarkTokenGroupFailedByChannelHealth(c *gin.Context, group string, api
 	if len(candidates) == 0 {
 		return true, baseReason + "；全局健康判定：该分组当前无可用渠道", nil
 	}
-	failedIDs := getRequestFailedChannelIDs(c, group, modelName)
 	available := make([]int, 0, len(candidates))
 	for _, channel := range candidates {
 		if channel == nil {
 			continue
 		}
-		if _, failedInThisRequest := failedIDs[channel.Id]; failedInThisRequest {
-			continue
-		}
 		available = append(available, channel.Id)
 	}
 	detail := fmt.Sprintf("全局健康判定：该分组仍有 %d 个可用渠道", len(candidates))
-	if len(available) == 0 {
-		return true, baseReason + "；" + detail + "，但本次请求已尝试过全部当前可用渠道，降级到下一分组", nil
-	}
 	return false, baseReason + "；" + detail, available
 }
 

@@ -84,6 +84,13 @@ func getRequestFailedChannelIDs(c *gin.Context, group string, modelName string) 
 	return copied
 }
 
+func requestFailedChannelExclusions(c *gin.Context, group string, modelName string) map[int]struct{} {
+	if ChannelHealthEnabled() {
+		return nil
+	}
+	return getRequestFailedChannelIDs(c, group, modelName)
+}
+
 func setSelectedTokenGroupContext(c *gin.Context, cfg model.TokenGroupConfig, group string) {
 	common.SetContextKey(c, constant.ContextKeyUsingGroup, group)
 	settings := effectiveTokenGroupItem(cfg, group)
@@ -179,7 +186,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 				priorityRetry = 0
 			}
 			logger.LogDebug(param.Ctx, "Token selecting group: %s, priorityRetry: %d", group, priorityRetry)
-			excludedIDs := getRequestFailedChannelIDs(param.Ctx, group, param.ModelName)
+			excludedIDs := requestFailedChannelExclusions(param.Ctx, group, param.ModelName)
 			if priorityRetry == 0 {
 				channel, err = getTokenGroupPreferredSatisfiedChannel(tokenID, group, param.ModelName, excludedIDs)
 				if err != nil {
@@ -214,7 +221,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 		for _, i := range stickyRecoveredIndexes {
 			group := cfg.Groups[i].Group
 			logger.LogDebug(param.Ctx, "Token selecting sticky recovered group: %s", group)
-			excludedIDs := getRequestFailedChannelIDs(param.Ctx, group, param.ModelName)
+			excludedIDs := requestFailedChannelExclusions(param.Ctx, group, param.ModelName)
 			channel, err = getTokenGroupPreferredSatisfiedChannel(tokenID, group, param.ModelName, excludedIDs)
 			if err != nil {
 				return nil, group, err
@@ -266,7 +273,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			excludedIDs := getRequestFailedChannelIDs(param.Ctx, autoGroup, param.ModelName)
+			excludedIDs := requestFailedChannelExclusions(param.Ctx, autoGroup, param.ModelName)
 			if priorityRetry == 0 {
 				channel, err = getTokenGroupPreferredSatisfiedChannel(tokenID, autoGroup, param.ModelName, excludedIDs)
 				if err != nil {
@@ -316,7 +323,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			break
 		}
 	} else {
-		channel, err = model.GetRandomSatisfiedChannelExcluding(param.TokenGroup, param.ModelName, param.GetRetry(), getRequestFailedChannelIDs(param.Ctx, param.TokenGroup, param.ModelName))
+		channel, err = model.GetRandomSatisfiedChannelExcluding(param.TokenGroup, param.ModelName, param.GetRetry(), requestFailedChannelExclusions(param.Ctx, param.TokenGroup, param.ModelName))
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}
