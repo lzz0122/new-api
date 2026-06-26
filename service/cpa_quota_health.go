@@ -21,8 +21,14 @@ const (
 	cpaQuotaHealthPath         = "/v1/internal/quota-health"
 	cpaQuotaHealthGraceSeconds = int64(120)
 	cpaQuotaHealthAttempts     = 3
-	cpaQuotaHealthRetryDelay   = 15 * time.Second
 	cpaQuotaHealthHTTPTimeout  = 10 * time.Second
+)
+
+var (
+	cpaQuotaHealthRetryDelay = 15 * time.Second
+	newCPAQuotaHealthClient  = func() *http.Client {
+		return &http.Client{Timeout: cpaQuotaHealthHTTPTimeout}
+	}
 )
 
 type cpaQuotaHealthRequest struct {
@@ -52,11 +58,24 @@ func HandleCPAQuotaHealthBeforeProbe(ctx context.Context, channel *model.Channel
 		health, err := RecordChannelProbeFailure(nil, channel, apiErr)
 		return AttachChannelHealthProbeModelResults(health, channel), apiErr, true, err
 	}
-	if result == nil || result.QuotaAvailable {
+	if result == nil {
+		return nil, nil, false, nil
+	}
+	if result.QuotaAvailable && !cpaQuotaHealthShouldDeferProbe(result) {
 		return nil, nil, false, nil
 	}
 	nextProbeAt := cpaQuotaHealthNextProbeAt(result)
-	reason := fmt.Sprintf("CPA quota unavailable: reason=%s retry_after_seconds=%d next_available_at=%d", result.Reason, result.RetryAfterSeconds, result.NextAvailableAt)
+	reason := fmt.Sprintf(
+		"CPA quota health deferred: reason=%s retry_after_seconds=%d next_available_at=%d total_candidates=%d available_candidates=%d quota_blocked_candidates=%d other_blocked_candidates=%d models=%s",
+		result.Reason,
+		result.RetryAfterSeconds,
+		result.NextAvailableAt,
+		result.TotalCandidates,
+		result.AvailableCandidates,
+		result.QuotaBlockedCandidates,
+		result.OtherBlockedCandidates,
+		strings.Join(result.Models, ","),
+	)
 	health, err := DeferChannelHealthProbe(channel.Id, nextProbeAt, reason)
 	return AttachChannelHealthProbeModelResults(health, channel), nil, true, err
 }
@@ -107,7 +126,7 @@ func doCPAQuotaHealthRequest(ctx context.Context, endpoint string, apiKey string
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	client := &http.Client{Timeout: cpaQuotaHealthHTTPTimeout}
+	client := newCPAQuotaHealthClient()
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, types.NewOpenAIError(fmt.Errorf("CPA quota health request failed: %w", err), types.ErrorCodeDoRequestFailed, http.StatusBadGateway)
@@ -181,6 +200,16 @@ func cpaQuotaHealthNextProbeAt(result *CPAQuotaHealthResponse) int64 {
 		return next + cpaQuotaHealthGraceSeconds
 	}
 	return now
+}
+
+func cpaQuotaHealthShouldDeferProbe(result *CPAQuotaHealthResponse) bool {
+	if result == nil {
+		return false
+	}
+	if !result.QuotaAvailable {
+		return true
+	}
+	return result.TotalCandidates == 0 && strings.EqualFold(strings.TrimSpace(result.Reason), "no_matching_auth")
 }
 
 func sleepWithContext(ctx context.Context, delay time.Duration) bool {

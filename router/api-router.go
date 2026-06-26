@@ -241,6 +241,7 @@ func SetApiRouter(router *gin.Engine) {
 			channelRoute.GET("/models_enabled", controller.EnabledListModels)
 			channelRoute.GET("/:id", controller.GetChannel)
 			channelRoute.POST("/:id/health/probe", controller.ProbeChannelHealth)
+			channelRoute.POST("/:id/health/healthy", controller.MarkChannelHealthHealthy)
 			channelRoute.POST("/:id/health/probe_interval", controller.UpdateChannelHealthProbeInterval)
 			channelRoute.POST("/:id/health/probe_models", controller.UpdateChannelHealthProbeModels)
 			channelRoute.POST("/:id/key", middleware.RootAuth(), middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.SecureVerificationRequired(), controller.GetChannelKey)

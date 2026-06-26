@@ -81,6 +81,29 @@ func ProbeChannelHealth(c *gin.Context) {
 	common.ApiSuccess(c, health)
 }
 
+func MarkChannelHealthHealthy(c *gin.Context) {
+	channelID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	channel, err := model.GetChannelById(channelID, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if channel.Status == common.ChannelStatusManuallyDisabled {
+		common.ApiErrorMsg(c, "手动禁用的渠道不能手动置活")
+		return
+	}
+	health, err := service.MarkChannelHealthHealthy(channel)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, health)
+}
+
 func GetUserChannelStatus(c *gin.Context) {
 	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 	if userGroup == "" {
@@ -239,9 +262,10 @@ func runChannelHealthProbe(channel *model.Channel, testUserID int, manual bool) 
 	var firstSuccess *testResult
 	var lastFailure *testResult
 	var lastLocalErr error
-	isStream := shouldUseStreamForAutomaticChannelTest(channel)
 	for _, probeModel := range probeModels {
-		result := testChannel(channel, testUserID, probeModel, "", isStream)
+		endpointType := channelHealthProbeEndpointType(channel, probeModel)
+		isStream := shouldUseStreamForChannelHealthProbe(channel, endpointType)
+		result := testChannel(channel, testUserID, probeModel, endpointType, isStream)
 		if result.localErr != nil && result.newAPIError == nil {
 			lastLocalErr = result.localErr
 			continue
@@ -273,4 +297,23 @@ func runChannelHealthProbe(channel *model.Channel, testUserID int, manual bool) 
 		return nil, nil, lastLocalErr
 	}
 	return nil, nil, fmt.Errorf("channel probe failed")
+}
+
+func channelHealthProbeEndpointType(channel *model.Channel, probeModel string) string {
+	endpointType := normalizeChannelTestEndpoint(channel, probeModel, "")
+	if endpointType != "" {
+		return endpointType
+	}
+	if service.IsCPAQuotaHealthChannel(channel) {
+		return string(constant.EndpointTypeOpenAIResponse)
+	}
+	return ""
+}
+
+func shouldUseStreamForChannelHealthProbe(channel *model.Channel, endpointType string) bool {
+	if shouldUseStreamForAutomaticChannelTest(channel) {
+		return true
+	}
+	return service.IsCPAQuotaHealthChannel(channel) &&
+		constant.EndpointType(endpointType) == constant.EndpointTypeOpenAIResponse
 }

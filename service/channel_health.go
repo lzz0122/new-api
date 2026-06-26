@@ -247,6 +247,72 @@ func RecordChannelProbeFailure(c *gin.Context, channel *model.Channel, err *type
 	return decorateChannelHealthState(state), nil
 }
 
+func MarkChannelHealthHealthy(channel *model.Channel) (*model.ChannelHealthState, error) {
+	if channel == nil || channel.Id <= 0 {
+		return nil, errors.New("invalid channel")
+	}
+	if channel.Status == common.ChannelStatusManuallyDisabled {
+		return nil, errors.New("manually disabled channel cannot be marked healthy")
+	}
+	if !ChannelHealthEnabled() {
+		if channel.Status == common.ChannelStatusAutoDisabled {
+			EnableChannel(channel.Id, "", channel.Name)
+		}
+		return defaultChannelHealthState(channel.Id), nil
+	}
+	now := common.GetTimestamp()
+	threshold := model.GetChannelHealthMinimumPositiveFailureThreshold(channel.Id)
+	ctx := ChannelHealthContext{ChannelName: channel.Name}
+	var result *model.ChannelHealthState
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		state, err := getOrCreateChannelHealthStateForUpdate(tx, channel.Id, now, threshold)
+		if err != nil {
+			return err
+		}
+		fromStatus := state.Status
+		state.Status = model.ChannelHealthStatusHealthy
+		state.FailureCount = 0
+		state.FailureThreshold = threshold
+		state.LastSuccessAt = now
+		state.NextProbeAt = 0
+		state.ProbeStartedAt = 0
+		state.LastStatusCode = http.StatusOK
+		state.LastErrorCode = ""
+		state.LastError = ""
+		state.LastModel = ""
+		state.LastGroup = ""
+		state.LastTokenId = 0
+		state.LastRequestId = ""
+		state.UpdatedAt = now
+		if err := tx.Save(state).Error; err != nil {
+			return err
+		}
+		if err := resetChannelHealthGroupStatesTx(tx, channel.Id, now); err != nil {
+			return err
+		}
+		if err := tx.Where("channel_id = ?", channel.Id).Delete(&model.ChannelHealthProbeModelState{}).Error; err != nil {
+			return err
+		}
+		if err := createChannelHealthEvent(tx, state, ctx, model.ChannelHealthEventManualHealthy, fromStatus, state.Status, http.StatusOK, "", ""); err != nil {
+			return err
+		}
+		if fromStatus == model.ChannelHealthStatusUnhealthy || fromStatus == model.ChannelHealthStatusProbing || fromStatus == model.ChannelHealthStatusSuspect {
+			if err := createChannelHealthEvent(tx, state, ctx, model.ChannelHealthEventRecovered, fromStatus, state.Status, http.StatusOK, "", ""); err != nil {
+				return err
+			}
+		}
+		result = state
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if channel.Status == common.ChannelStatusAutoDisabled {
+		EnableChannel(channel.Id, "", channel.Name)
+	}
+	return AttachChannelHealthProbeModelResults(decorateChannelHealthState(result), channel), nil
+}
+
 func RecordChannelProbeModelSuccess(channelID int, modelName string) error {
 	if channelID <= 0 || strings.TrimSpace(modelName) == "" {
 		return nil
@@ -1076,7 +1142,11 @@ func DeferChannelHealthProbe(channelID int, nextProbeAt int64, reason string) (*
 			}
 		}
 		state.Status = model.ChannelHealthStatusUnhealthy
+		if threshold > 0 && state.FailureCount < threshold {
+			state.FailureCount = threshold
+		}
 		state.FailureThreshold = threshold
+		state.LastFailureAt = now
 		state.LastProbeAt = now
 		state.ProbeStartedAt = 0
 		state.NextProbeAt = nextProbeAt
@@ -1361,11 +1431,11 @@ func channelHealthUnavailableForAllAffectedGroups(state *model.ChannelHealthStat
 		if !ok {
 			threshold = operation_setting.GetChannelHealthSetting().FailureThreshold
 		}
-		groupState, ok := statesByGroup[group]
-		if !ok {
-			return false
+		var groupStatePtr *model.ChannelHealthGroupState
+		if groupState, ok := statesByGroup[group]; ok {
+			groupStatePtr = &groupState
 		}
-		if !model.IsChannelHealthUnavailableForGroupState(state, &groupState, group, threshold) {
+		if !model.IsChannelHealthUnavailableForGroupState(state, groupStatePtr, group, threshold) {
 			return false
 		}
 	}
