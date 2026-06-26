@@ -433,7 +433,11 @@ func TokenAuth() func(c *gin.Context) {
 		}
 		common.SetContextKey(c, constant.ContextKeyUsingGroup, userGroup)
 		common.SetContextKey(c, constant.ContextKeyTokenGroupConfig, tokenGroupConfig)
-		common.SetContextKey(c, constant.ContextKeyTokenGroupTimeout, tokenGroupConfig.TimeoutSeconds)
+		tokenGroupTimeout := tokenGroupConfig.TimeoutSeconds
+		if service.ChannelHealthEnabled() {
+			tokenGroupTimeout = 0
+		}
+		common.SetContextKey(c, constant.ContextKeyTokenGroupTimeout, tokenGroupTimeout)
 
 		err = SetupContextForToken(c, token, parts...)
 		if err != nil {
@@ -463,8 +467,13 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 	}
 	common.SetContextKey(c, constant.ContextKeyTokenGroup, token.Group)
 	common.SetContextKey(c, constant.ContextKeyTokenCrossGroupRetry, token.CrossGroupRetry)
-	common.SetContextKey(c, constant.ContextKeyTokenGroupConfig, token.ParseGroupConfig())
-	common.SetContextKey(c, constant.ContextKeyTokenGroupTimeout, token.ParseGroupConfig().TimeoutSeconds)
+	tokenGroupConfig := token.ParseGroupConfig()
+	common.SetContextKey(c, constant.ContextKeyTokenGroupConfig, tokenGroupConfig)
+	tokenGroupTimeout := tokenGroupConfig.TimeoutSeconds
+	if service.ChannelHealthEnabled() {
+		tokenGroupTimeout = 0
+	}
+	common.SetContextKey(c, constant.ContextKeyTokenGroupTimeout, tokenGroupTimeout)
 	if len(parts) > 1 {
 		if model.IsAdmin(token.UserId) {
 			c.Set("specific_channel_id", parts[1])

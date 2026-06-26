@@ -87,7 +87,30 @@ func getRequestFailedChannelIDs(c *gin.Context, group string, modelName string) 
 func setSelectedTokenGroupContext(c *gin.Context, cfg model.TokenGroupConfig, group string) {
 	common.SetContextKey(c, constant.ContextKeyUsingGroup, group)
 	settings := effectiveTokenGroupItem(cfg, group)
-	common.SetContextKey(c, constant.ContextKeyTokenGroupTimeout, settings.TimeoutSeconds)
+	timeoutSeconds := settings.TimeoutSeconds
+	if ChannelHealthEnabled() {
+		timeoutSeconds = 0
+	}
+	common.SetContextKey(c, constant.ContextKeyTokenGroupTimeout, timeoutSeconds)
+}
+
+func getTokenGroupPreferredSatisfiedChannel(tokenID int, group string, modelName string, excludedIDs map[int]struct{}) (*model.Channel, error) {
+	if lastChannelID := getTokenGroupLastSuccessfulChannel(tokenID, group, modelName); lastChannelID > 0 {
+		channel, err := model.GetRandomSatisfiedChannelFromIDsExcluding(group, modelName, 0, []int{lastChannelID}, excludedIDs)
+		if err != nil || channel != nil {
+			return channel, err
+		}
+	}
+	preferredIDs := getTokenGroupPreferredChannels(tokenID, group, modelName)
+	if len(preferredIDs) == 0 {
+		return nil, nil
+	}
+	channel, err := model.GetRandomSatisfiedChannelFromIDsExcluding(group, modelName, 0, preferredIDs, excludedIDs)
+	if err != nil || channel != nil {
+		return channel, err
+	}
+	setTokenGroupPreferredChannels(tokenID, group, modelName, nil)
+	return nil, nil
 }
 
 // CacheGetRandomSatisfiedChannel tries to get a random channel that satisfies the requirements.
@@ -157,13 +180,10 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Token selecting group: %s, priorityRetry: %d", group, priorityRetry)
 			excludedIDs := getRequestFailedChannelIDs(param.Ctx, group, param.ModelName)
-			if preferredIDs := getTokenGroupPreferredChannels(tokenID, group, param.ModelName); len(preferredIDs) > 0 {
-				channel, err = model.GetRandomSatisfiedChannelFromIDsExcluding(group, param.ModelName, priorityRetry, preferredIDs, excludedIDs)
+			if priorityRetry == 0 {
+				channel, err = getTokenGroupPreferredSatisfiedChannel(tokenID, group, param.ModelName, excludedIDs)
 				if err != nil {
 					return nil, group, err
-				}
-				if channel == nil {
-					setTokenGroupPreferredChannels(tokenID, group, param.ModelName, nil)
 				}
 			}
 			if channel == nil {
@@ -173,6 +193,9 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 				return nil, group, err
 			}
 			if channel == nil {
+				if ChannelHealthEnabled() {
+					AppendTokenGroupFailure(param.Ctx, group+" 分组当前无可用渠道")
+				}
 				common.SetContextKey(param.Ctx, constant.ContextKeyTokenGroupIndex, i+1)
 				param.SetRetry(0)
 				continue
@@ -192,14 +215,9 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			group := cfg.Groups[i].Group
 			logger.LogDebug(param.Ctx, "Token selecting sticky recovered group: %s", group)
 			excludedIDs := getRequestFailedChannelIDs(param.Ctx, group, param.ModelName)
-			if preferredIDs := getTokenGroupPreferredChannels(tokenID, group, param.ModelName); len(preferredIDs) > 0 {
-				channel, err = model.GetRandomSatisfiedChannelFromIDsExcluding(group, param.ModelName, 0, preferredIDs, excludedIDs)
-				if err != nil {
-					return nil, group, err
-				}
-				if channel == nil {
-					setTokenGroupPreferredChannels(tokenID, group, param.ModelName, nil)
-				}
+			channel, err = getTokenGroupPreferredSatisfiedChannel(tokenID, group, param.ModelName, excludedIDs)
+			if err != nil {
+				return nil, group, err
 			}
 			if channel == nil {
 				channel, err = model.GetRandomSatisfiedChannelExcluding(group, param.ModelName, 0, excludedIDs)
@@ -223,6 +241,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			return nil, selectGroup, errors.New("auto groups is not enabled")
 		}
 		autoGroups := GetUserAutoGroup(userGroup)
+		tokenID := common.GetContextKeyInt(param.Ctx, constant.ContextKeyTokenId)
 
 		// startGroupIndex: the group index to start searching from
 		// startGroupIndex: 开始搜索的分组索引
@@ -247,11 +266,23 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, _ = model.GetRandomSatisfiedChannelExcluding(autoGroup, param.ModelName, priorityRetry, getRequestFailedChannelIDs(param.Ctx, autoGroup, param.ModelName))
+			excludedIDs := getRequestFailedChannelIDs(param.Ctx, autoGroup, param.ModelName)
+			if priorityRetry == 0 {
+				channel, err = getTokenGroupPreferredSatisfiedChannel(tokenID, autoGroup, param.ModelName, excludedIDs)
+				if err != nil {
+					return nil, autoGroup, err
+				}
+			}
+			if channel == nil {
+				channel, _ = model.GetRandomSatisfiedChannelExcluding(autoGroup, param.ModelName, priorityRetry, excludedIDs)
+			}
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
 				// 当前分组没有该模型的可用渠道，尝试下一个分组
 				logger.LogDebug(param.Ctx, "No available channel in group %s for model %s at priorityRetry %d, trying next group", autoGroup, param.ModelName, priorityRetry)
+				if ChannelHealthEnabled() {
+					AppendTokenGroupFailure(param.Ctx, autoGroup+" 分组当前无可用渠道")
+				}
 				// 重置状态以尝试下一个分组
 				common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex, i+1)
 				common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupRetryIndex, 0)

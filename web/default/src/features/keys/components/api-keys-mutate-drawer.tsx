@@ -336,17 +336,6 @@ export function ApiKeysMutateDrawer({
         group: pendingGroup,
         order: groupRoutes.length + 1,
         failover_strategy: form.getValues('failover_strategy'),
-        timeout_seconds: form.getValues('timeout_seconds'),
-        cooldown_seconds: form.getValues('cooldown_seconds'),
-        recovery_strategy: form.getValues('recovery_strategy'),
-        failure_detection_strategy: form.getValues(
-          'failure_detection_strategy'
-        ),
-        failure_detection_ratio: form.getValues('failure_detection_ratio'),
-        recovery_detection_strategy: form.getValues(
-          'recovery_detection_strategy'
-        ),
-        recovery_detection_ratio: form.getValues('recovery_detection_ratio'),
       },
     ]
     setGroupRoutes(nextRoutes)
@@ -612,7 +601,7 @@ export function ApiKeysMutateDrawer({
                                         />
                                       </div>
                                     </div>
-                                    <div className='grid gap-3 sm:grid-cols-2'>
+                                    <div className='grid gap-3'>
                                       <div className='space-y-1.5'>
                                         <FormLabel className='text-xs'>
                                           {t('Failure strategy')}
@@ -638,195 +627,6 @@ export function ApiKeysMutateDrawer({
                                           </NativeSelectOption>
                                         </NativeSelect>
                                       </div>
-                                      <div className='space-y-1.5'>
-                                        <FormLabel className='text-xs'>
-                                          {t('Recovery strategy')}
-                                        </FormLabel>
-                                        <NativeSelect
-                                          className='w-full'
-                                          value={
-                                            route.recovery_strategy ||
-                                            'probe_then_switch'
-                                          }
-                                          onChange={(event) =>
-                                            updateGroupRoute(index, {
-                                              recovery_strategy: event.target
-                                                .value as ApiKeyGroupRoute['recovery_strategy'],
-                                            })
-                                          }
-                                        >
-                                          <NativeSelectOption value='probe_then_switch'>
-                                            {t('Prefer recovered group')}
-                                          </NativeSelectOption>
-                                          <NativeSelectOption value='sticky'>
-                                            {t('Keep current group')}
-                                          </NativeSelectOption>
-                                        </NativeSelect>
-                                      </div>
-                                      <div className='space-y-1.5'>
-                                        <FormLabel className='text-xs'>
-                                          {t('First response timeout')}
-                                        </FormLabel>
-                                        <Input
-                                          type='number'
-                                          min='0'
-                                          max='600'
-                                          value={route.timeout_seconds ?? 0}
-                                          onChange={(event) =>
-                                            updateGroupRoute(index, {
-                                              timeout_seconds:
-                                                parseInt(
-                                                  event.target.value,
-                                                  10
-                                                ) || 0,
-                                            })
-                                          }
-                                        />
-                                        <div className='text-muted-foreground text-xs'>
-                                          {t('Seconds, 0 disables')}
-                                        </div>
-                                      </div>
-                                      <div className='space-y-1.5'>
-                                        <FormLabel className='text-xs'>
-                                          {t('Pause after failure')}
-                                        </FormLabel>
-                                        <Input
-                                          type='number'
-                                          min='1'
-                                          max='86400'
-                                          value={
-                                            route.cooldown_seconds ?? 600
-                                          }
-                                          onChange={(event) =>
-                                            updateGroupRoute(index, {
-                                              cooldown_seconds:
-                                                parseInt(
-                                                  event.target.value,
-                                                  10
-                                                ) || 600,
-                                            })
-                                          }
-                                        />
-                                        <div className='text-muted-foreground text-xs'>
-                                          {t('Seconds')}
-                                        </div>
-                                      </div>
-                                      <div className='space-y-1.5'>
-                                        <FormLabel className='text-xs'>
-                                          {t('Failure detection strategy')}
-                                        </FormLabel>
-                                        <NativeSelect
-                                          className='w-full'
-                                          value={
-                                            route.failure_detection_strategy ||
-                                            'one'
-                                          }
-                                          onChange={(event) =>
-                                            updateGroupRoute(index, {
-                                              failure_detection_strategy:
-                                                event.target
-                                                  .value as ApiKeyGroupRoute['failure_detection_strategy'],
-                                            })
-                                          }
-                                        >
-                                          <NativeSelectOption value='one'>
-                                            {t('One failed channel')}
-                                          </NativeSelectOption>
-                                          <NativeSelectOption value='half'>
-                                            {t('More than half failed')}
-                                          </NativeSelectOption>
-                                          <NativeSelectOption value='all'>
-                                            {t('All channels failed')}
-                                          </NativeSelectOption>
-                                          <NativeSelectOption value='ratio'>
-                                            {t('Custom ratio')}
-                                          </NativeSelectOption>
-                                        </NativeSelect>
-                                      </div>
-                                      {(route.failure_detection_strategy ||
-                                        'one') === 'ratio' && (
-                                        <div className='space-y-1.5'>
-                                          <FormLabel className='text-xs'>
-                                            {t('Failure ratio')}
-                                          </FormLabel>
-                                          <Input
-                                            type='number'
-                                            min='0.01'
-                                            max='1'
-                                            step='0.01'
-                                            value={
-                                              route.failure_detection_ratio ??
-                                              0.5
-                                            }
-                                            onChange={(event) =>
-                                              updateGroupRoute(index, {
-                                                failure_detection_ratio:
-                                                  parseFloat(
-                                                    event.target.value
-                                                  ) || 0.5,
-                                              })
-                                            }
-                                          />
-                                        </div>
-                                      )}
-                                      <div className='space-y-1.5'>
-                                        <FormLabel className='text-xs'>
-                                          {t('Recovery detection strategy')}
-                                        </FormLabel>
-                                        <NativeSelect
-                                          className='w-full'
-                                          value={
-                                            route.recovery_detection_strategy ||
-                                            'one'
-                                          }
-                                          onChange={(event) =>
-                                            updateGroupRoute(index, {
-                                              recovery_detection_strategy:
-                                                event.target
-                                                  .value as ApiKeyGroupRoute['recovery_detection_strategy'],
-                                            })
-                                          }
-                                        >
-                                          <NativeSelectOption value='one'>
-                                            {t('One healthy channel')}
-                                          </NativeSelectOption>
-                                          <NativeSelectOption value='half'>
-                                            {t('At least half healthy')}
-                                          </NativeSelectOption>
-                                          <NativeSelectOption value='all'>
-                                            {t('All channels healthy')}
-                                          </NativeSelectOption>
-                                          <NativeSelectOption value='ratio'>
-                                            {t('Custom ratio')}
-                                          </NativeSelectOption>
-                                        </NativeSelect>
-                                      </div>
-                                      {(route.recovery_detection_strategy ||
-                                        'one') === 'ratio' && (
-                                        <div className='space-y-1.5'>
-                                          <FormLabel className='text-xs'>
-                                            {t('Recovery ratio')}
-                                          </FormLabel>
-                                          <Input
-                                            type='number'
-                                            min='0.01'
-                                            max='1'
-                                            step='0.01'
-                                            value={
-                                              route.recovery_detection_ratio ??
-                                              0.5
-                                            }
-                                            onChange={(event) =>
-                                              updateGroupRoute(index, {
-                                                recovery_detection_ratio:
-                                                  parseFloat(
-                                                    event.target.value
-                                                  ) || 0.5,
-                                              })
-                                            }
-                                          />
-                                        </div>
-                                      )}
                                     </div>
                                   </div>
                                 )}
@@ -867,7 +667,7 @@ export function ApiKeysMutateDrawer({
                     </FormControl>
                     <FormDescription>
                       {t(
-                        'Lower numbers are tried first. Failed groups pause before being tried again.'
+                        'Lower numbers are tried first. Channel health is evaluated globally by the system.'
                       )}
                     </FormDescription>
                     <FormMessage />

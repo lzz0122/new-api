@@ -44,6 +44,13 @@ var tokenGroupPreferredChannels = struct {
 	channels: make(map[string][]int),
 }
 
+var tokenGroupLastSuccessfulChannels = struct {
+	sync.RWMutex
+	channels map[string]int
+}{
+	channels: make(map[string]int),
+}
+
 type tokenGroupProbeSchedule struct {
 	BlockedUntil     int64
 	ProbeModel       string
@@ -192,6 +199,26 @@ func getTokenGroupPreferredChannels(tokenID int, group string, modelName string)
 	return append([]int(nil), tokenGroupPreferredChannels.channels[key]...)
 }
 
+func setTokenGroupLastSuccessfulChannel(tokenID int, group string, modelName string, channelID int) {
+	if tokenID <= 0 || group == "" || channelID <= 0 {
+		return
+	}
+	key := tokenGroupModelHealthKey(tokenID, group, modelName)
+	tokenGroupLastSuccessfulChannels.Lock()
+	defer tokenGroupLastSuccessfulChannels.Unlock()
+	tokenGroupLastSuccessfulChannels.channels[key] = channelID
+}
+
+func getTokenGroupLastSuccessfulChannel(tokenID int, group string, modelName string) int {
+	if tokenID <= 0 || group == "" {
+		return 0
+	}
+	key := tokenGroupModelHealthKey(tokenID, group, modelName)
+	tokenGroupLastSuccessfulChannels.RLock()
+	defer tokenGroupLastSuccessfulChannels.RUnlock()
+	return tokenGroupLastSuccessfulChannels.channels[key]
+}
+
 func HasTokenGroupPreferredChannels(tokenID int, group string, modelName string) bool {
 	return len(getTokenGroupPreferredChannels(tokenID, group, modelName)) > 0
 }
@@ -288,6 +315,14 @@ func ClearTokenGroupHealth(tokenID int) {
 	}
 	tokenGroupPreferredChannels.Unlock()
 
+	tokenGroupLastSuccessfulChannels.Lock()
+	for key := range tokenGroupLastSuccessfulChannels.channels {
+		if strings.HasPrefix(key, prefix) {
+			delete(tokenGroupLastSuccessfulChannels.channels, key)
+		}
+	}
+	tokenGroupLastSuccessfulChannels.Unlock()
+
 	tokenGroupProbeSchedules.Lock()
 	for key := range tokenGroupProbeSchedules.schedules {
 		if strings.HasPrefix(key, prefix) {
@@ -328,6 +363,9 @@ func IsTokenGroupCooling(tokenID int, group string, cfg model.TokenGroupConfig) 
 
 func IsTokenGroupModelCooling(tokenID int, group string, modelName string, cfg model.TokenGroupConfig) (bool, string, int64) {
 	if tokenID <= 0 || group == "" {
+		return false, "", 0
+	}
+	if ChannelHealthEnabled() {
 		return false, "", 0
 	}
 	cfg = model.NormalizeTokenGroupConfig(cfg, "")
@@ -376,10 +414,12 @@ func MarkTokenGroupSuccess(c *gin.Context, group string) {
 		return
 	}
 	modelName := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
+	channelID := common.GetContextKeyInt(c, constant.ContextKeyChannelId)
 	clearTokenGroupHealthState(tokenID, group, modelName)
 	clearTokenGroupProbeSchedules(tokenID, group, modelName)
 	clearTokenGroupFailureObservations(tokenID, group)
 	clearTokenGroupPreferredChannels(tokenID, group, modelName)
+	setTokenGroupLastSuccessfulChannel(tokenID, group, modelName, channelID)
 }
 
 func MarkTokenGroupFailure(c *gin.Context, group string, cfg model.TokenGroupConfig, err *types.NewAPIError) bool {
@@ -392,7 +432,14 @@ func MarkTokenGroupFailure(c *gin.Context, group string, cfg model.TokenGroupCon
 		return false
 	}
 	settings := effectiveTokenGroupItem(cfg, group)
-	groupFailed, reason, availableChannelIDs := shouldMarkTokenGroupFailed(c, group, settings, err)
+	var groupFailed bool
+	var reason string
+	var availableChannelIDs []int
+	if ChannelHealthEnabled() {
+		groupFailed, reason, availableChannelIDs = shouldMarkTokenGroupFailedByChannelHealth(c, group, err)
+	} else {
+		groupFailed, reason, availableChannelIDs = shouldMarkTokenGroupFailed(c, group, settings, err)
+	}
 	modelName := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
 	if len(availableChannelIDs) > 0 {
 		setTokenGroupPreferredChannels(tokenID, group, modelName, availableChannelIDs)
@@ -400,6 +447,10 @@ func MarkTokenGroupFailure(c *gin.Context, group string, cfg model.TokenGroupCon
 	if !groupFailed {
 		AppendTokenGroupFailure(c, reason)
 		return false
+	}
+	if ChannelHealthEnabled() {
+		AppendTokenGroupFailure(c, reason)
+		return true
 	}
 	cooldown := settings.CooldownSeconds
 	if cooldown <= 0 {
@@ -420,6 +471,37 @@ func MarkTokenGroupFailure(c *gin.Context, group string, cfg model.TokenGroupCon
 	AppendTokenGroupFailure(c, reason)
 	scheduleTokenGroupProbe(tokenID, group, cfg, state)
 	return true
+}
+
+func shouldMarkTokenGroupFailedByChannelHealth(c *gin.Context, group string, apiErr *types.NewAPIError) (bool, string, []int) {
+	baseReason := formatTokenGroupFailureReason(group, apiErr)
+	modelName := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
+	if modelName == "" {
+		return true, baseReason + "；无法获取原始模型，按分组不可用处理", nil
+	}
+	candidates, err := model.GetSatisfiedChannels(group, modelName)
+	if err != nil {
+		return true, baseReason + "；全局健康判定获取候选渠道失败：" + common.LocalLogPreview(err.Error()), nil
+	}
+	if len(candidates) == 0 {
+		return true, baseReason + "；全局健康判定：该分组当前无可用渠道", nil
+	}
+	failedIDs := getRequestFailedChannelIDs(c, group, modelName)
+	available := make([]int, 0, len(candidates))
+	for _, channel := range candidates {
+		if channel == nil {
+			continue
+		}
+		if _, failedInThisRequest := failedIDs[channel.Id]; failedInThisRequest {
+			continue
+		}
+		available = append(available, channel.Id)
+	}
+	detail := fmt.Sprintf("全局健康判定：该分组仍有 %d 个可用渠道", len(candidates))
+	if len(available) == 0 {
+		return true, baseReason + "；" + detail + "，但本次请求已尝试过全部当前可用渠道，降级到下一分组", nil
+	}
+	return false, baseReason + "；" + detail, available
 }
 
 func tokenGroupProbeRequestPath(c *gin.Context) string {
@@ -618,6 +700,9 @@ func PrepareRecoveredTokenGroup(c *gin.Context, retryParam *RetryParam) bool {
 	if !ok || len(cfg.Groups) <= 1 || retryParam == nil {
 		return false
 	}
+	if ChannelHealthEnabled() {
+		return false
+	}
 	if cfg.FailoverStrategy != model.TokenGroupFailoverStrategyFallback {
 		return false
 	}
@@ -649,6 +734,13 @@ func HasAvailableLaterTokenGroup(c *gin.Context, currentGroup string) bool {
 			continue
 		}
 		if !seenCurrent {
+			continue
+		}
+		if ChannelHealthEnabled() {
+			candidates, err := model.GetSatisfiedChannels(item.Group, modelName)
+			if err == nil && len(candidates) > 0 {
+				return true
+			}
 			continue
 		}
 		cooling, _, _ := IsTokenGroupModelCooling(tokenID, item.Group, modelName, cfg)

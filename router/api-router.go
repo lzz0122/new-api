@@ -228,6 +228,12 @@ func SetApiRouter(router *gin.Engine) {
 			ratioSyncRoute.GET("/channels", controller.GetSyncableChannels)
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
 		}
+		apiRouter.GET("/channel-status", middleware.UserAuth(), controller.GetUserChannelStatus)
+		channelHealthRoute := apiRouter.Group("/channel-health")
+		channelHealthRoute.Use(middleware.AdminAuth())
+		{
+			channelHealthRoute.POST("/group-threshold", controller.UpdateChannelHealthGroupThreshold)
+		}
 		registerChannelRoutes(apiRouter)
 		registerAuthzRoutes(apiRouter)
 		tokenRoute := apiRouter.Group("/token")

@@ -949,10 +949,23 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 			}
 		}
 
+		if result.localErr != nil && newAPIError == nil {
+			common.SysLog(fmt.Sprintf("channel #%d automatic test skipped: %s", channel.Id, result.localErr.Error()))
+			continue
+		}
+
 		if newAPIError == nil {
 			summary.Succeeded++
 		} else {
 			summary.Failed++
+		}
+
+		if newAPIError != nil {
+			service.RecordChannelFailure(result.context, channel, newAPIError)
+		} else if !isChannelEnabled {
+			_, _ = service.RecordChannelProbeSuccess(result.context, channel)
+		} else {
+			service.RecordChannelSuccess(result.context, channel.Id)
 		}
 
 		// disable channel

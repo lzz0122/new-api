@@ -27,6 +27,17 @@ var commonFalseVal string
 var logKeyCol string
 var logGroupCol string
 
+func GroupColumn() string {
+	return commonGroupCol
+}
+
+func QualifiedGroupColumn(table string) string {
+	if table == "" {
+		return commonGroupCol
+	}
+	return table + "." + commonGroupCol
+}
+
 func initCol() {
 	// init common column names
 	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
@@ -276,6 +287,9 @@ func migrateDB() error {
 		&Option{},
 		&Redemption{},
 		&Ability{},
+		&ChannelHealthState{},
+		&ChannelHealthGroupSetting{},
+		&ChannelHealthEvent{},
 		&Log{},
 		&CarnivalSession{},
 		&CarnivalUsage{},
@@ -334,6 +348,9 @@ func migrateDBFast() error {
 		{&Option{}, "Option"},
 		{&Redemption{}, "Redemption"},
 		{&Ability{}, "Ability"},
+		{&ChannelHealthState{}, "ChannelHealthState"},
+		{&ChannelHealthGroupSetting{}, "ChannelHealthGroupSetting"},
+		{&ChannelHealthEvent{}, "ChannelHealthEvent"},
 		{&Log{}, "Log"},
 		{&CarnivalSession{}, "CarnivalSession"},
 		{&CarnivalUsage{}, "CarnivalUsage"},
