@@ -341,16 +341,41 @@ func filterRoutableChannelIDs(group string, channelIDs []int) []int {
 	if len(channelIDs) == 0 || !operation_setting.GetChannelHealthSetting().Enabled {
 		return channelIDs
 	}
-	var states []ChannelHealthState
-	err := DB.Where("channel_id IN ?", channelIDs).Find(&states).Error
-	if err != nil || len(states) == 0 {
+	threshold := GetChannelHealthGroupFailureThreshold(group)
+	if threshold <= 0 {
 		return channelIDs
 	}
-	threshold := GetChannelHealthGroupFailureThreshold(group)
-	unhealthySet := make(map[int]struct{}, len(states))
+	var states []ChannelHealthState
+	err := DB.Where("channel_id IN ?", channelIDs).Find(&states).Error
+	if err != nil {
+		return channelIDs
+	}
+	globalStateMap := make(map[int]ChannelHealthState, len(states))
 	for _, state := range states {
-		if IsChannelHealthUnavailableForThreshold(&state, threshold) {
-			unhealthySet[state.ChannelId] = struct{}{}
+		globalStateMap[state.ChannelId] = state
+	}
+	var groupStates []ChannelHealthGroupState
+	if err := DB.Where("channel_id IN ? AND group_name = ?", channelIDs, strings.TrimSpace(group)).Find(&groupStates).Error; err != nil {
+		return channelIDs
+	}
+	groupStateMap := make(map[int]ChannelHealthGroupState, len(groupStates))
+	for _, state := range groupStates {
+		groupStateMap[state.ChannelId] = state
+	}
+	unhealthySet := make(map[int]struct{}, len(channelIDs))
+	for _, channelID := range channelIDs {
+		globalState, hasGlobalState := globalStateMap[channelID]
+		groupState, hasGroupState := groupStateMap[channelID]
+		var globalPtr *ChannelHealthState
+		if hasGlobalState {
+			globalPtr = &globalState
+		}
+		var groupPtr *ChannelHealthGroupState
+		if hasGroupState {
+			groupPtr = &groupState
+		}
+		if IsChannelHealthUnavailableForGroupState(globalPtr, groupPtr, group, threshold) {
+			unhealthySet[channelID] = struct{}{}
 		}
 	}
 	if len(unhealthySet) == 0 {

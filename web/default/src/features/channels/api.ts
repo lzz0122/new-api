@@ -223,6 +223,18 @@ export async function updateChannelHealthProbeInterval(
   return res.data
 }
 
+export async function updateChannelHealthProbeModels(
+  id: number,
+  probeModels: string[]
+): Promise<ChannelHealthProbeResponse> {
+  const res = await api.post(
+    `/api/channel/${id}/health/probe_models`,
+    { probe_models: probeModels },
+    channelActionConfig()
+  )
+  return res.data
+}
+
 export async function updateChannelHealthGroupThreshold(
   group: string,
   failureThreshold: number

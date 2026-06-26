@@ -21,6 +21,10 @@ type channelHealthProbeIntervalRequest struct {
 	ProbeIntervalSeconds int `json:"probe_interval_seconds"`
 }
 
+type channelHealthProbeModelsRequest struct {
+	ProbeModels []string `json:"probe_models"`
+}
+
 type channelHealthGroupThresholdRequest struct {
 	Group            string `json:"group"`
 	FailureThreshold int    `json:"failure_threshold"`
@@ -59,32 +63,18 @@ func ProbeChannelHealth(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	_, _ = service.MarkChannelHealthProbing(channel.Id, true)
-	result := testChannel(channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
-	if result.localErr != nil && result.newAPIError == nil {
-		service.CancelChannelHealthProbe(channel.Id)
-		common.ApiError(c, result.localErr)
+	health, result, err := runChannelHealthProbe(channel, testUserID, true)
+	if err != nil {
+		common.ApiError(c, err)
 		return
 	}
-
-	if result.newAPIError != nil {
-		health, recordErr := service.RecordChannelProbeFailure(result.context, channel, result.newAPIError)
-		if recordErr != nil {
-			common.ApiError(c, recordErr)
-			return
-		}
+	if result != nil && result.newAPIError != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success":    false,
 			"message":    result.newAPIError.Error(),
 			"error_code": result.newAPIError.GetErrorCode(),
 			"data":       health,
 		})
-		return
-	}
-
-	health, err := service.RecordChannelProbeSuccess(result.context, channel)
-	if err != nil {
-		common.ApiError(c, err)
 		return
 	}
 	common.ApiSuccess(c, health)
@@ -120,6 +110,30 @@ func UpdateChannelHealthProbeInterval(c *gin.Context) {
 		return
 	}
 	state, err := service.UpdateChannelHealthProbeInterval(channelID, req.ProbeIntervalSeconds)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, state)
+}
+
+func UpdateChannelHealthProbeModels(c *gin.Context) {
+	channelID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	channel, err := model.GetChannelById(channelID, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	var req channelHealthProbeModelsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	state, err := service.UpdateChannelHealthProbeModels(channel, req.ProbeModels)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -193,16 +207,59 @@ func probeDueChannelHealth(channelID int, testUserID int) error {
 	if channel.Status == common.ChannelStatusManuallyDisabled {
 		return nil
 	}
-	_, _ = service.MarkChannelHealthProbing(channel.Id, false)
-	result := testChannel(channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
-	if result.localErr != nil && result.newAPIError == nil {
-		service.CancelChannelHealthProbe(channel.Id)
-		return result.localErr
-	}
-	if result.newAPIError != nil {
-		_, err := service.RecordChannelProbeFailure(result.context, channel, result.newAPIError)
-		return err
-	}
-	_, err = service.RecordChannelProbeSuccess(result.context, channel)
+	_, _, err = runChannelHealthProbe(channel, testUserID, false)
 	return err
+}
+
+func runChannelHealthProbe(channel *model.Channel, testUserID int, manual bool) (*model.ChannelHealthState, *testResult, error) {
+	if channel == nil || channel.Id <= 0 {
+		return nil, nil, fmt.Errorf("invalid channel")
+	}
+	healthMap, _ := service.GetChannelHealthMap([]int{channel.Id})
+	var existingState *model.ChannelHealthState
+	if state, ok := healthMap[channel.Id]; ok {
+		existingState = &state
+	}
+	probeModels := service.EffectiveChannelProbeModels(channel, existingState)
+	if len(probeModels) == 0 {
+		return nil, nil, fmt.Errorf("channel #%d has no probe models", channel.Id)
+	}
+	_, _ = service.MarkChannelHealthProbing(channel.Id, manual)
+	var firstSuccess *testResult
+	var lastFailure *testResult
+	var lastLocalErr error
+	isStream := shouldUseStreamForAutomaticChannelTest(channel)
+	for _, probeModel := range probeModels {
+		result := testChannel(channel, testUserID, probeModel, "", isStream)
+		if result.localErr != nil && result.newAPIError == nil {
+			lastLocalErr = result.localErr
+			continue
+		}
+		if result.newAPIError != nil {
+			lastFailure = &result
+			if err := service.RecordChannelProbeModelFailure(channel.Id, probeModel, result.newAPIError); err != nil {
+				return nil, &result, err
+			}
+			continue
+		}
+		if err := service.RecordChannelProbeModelSuccess(channel.Id, probeModel); err != nil {
+			return nil, &result, err
+		}
+		if firstSuccess == nil {
+			firstSuccess = &result
+		}
+	}
+	if firstSuccess != nil {
+		health, err := service.RecordChannelProbeSuccess(firstSuccess.context, channel)
+		return service.AttachChannelHealthProbeModelResults(health, channel), nil, err
+	}
+	if lastFailure != nil && lastFailure.newAPIError != nil {
+		health, err := service.RecordChannelProbeFailure(lastFailure.context, channel, lastFailure.newAPIError)
+		return service.AttachChannelHealthProbeModelResults(health, channel), lastFailure, err
+	}
+	service.CancelChannelHealthProbe(channel.Id)
+	if lastLocalErr != nil {
+		return nil, nil, lastLocalErr
+	}
+	return nil, nil, fmt.Errorf("channel probe failed")
 }
