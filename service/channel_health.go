@@ -44,21 +44,23 @@ type UserChannelStatusGroup struct {
 }
 
 type UserChannelStatusItem struct {
-	ChannelID                 int      `json:"channel_id"`
-	ChannelName               string   `json:"channel_name"`
-	ChannelStatus             int      `json:"channel_status"`
-	HealthStatus              string   `json:"health_status"`
-	DisplayStatus             string   `json:"display_status"`
-	NextProbeAt               int64    `json:"next_probe_at"`
-	NextProbeRemainingSeconds int64    `json:"next_probe_remaining_seconds"`
-	FailureCount              int      `json:"failure_count"`
-	FailureThreshold          int      `json:"failure_threshold"`
-	ProbeIntervalSeconds      int      `json:"probe_interval_seconds"`
-	LastFailureAt             int64    `json:"last_failure_at"`
-	LastSuccessAt             int64    `json:"last_success_at"`
-	AutoProbeEnabled          bool     `json:"auto_probe_enabled"`
-	CanProbe                  bool     `json:"can_probe"`
-	Models                    []string `json:"models"`
+	ChannelID                 int                                  `json:"channel_id"`
+	ChannelName               string                               `json:"channel_name"`
+	ChannelStatus             int                                  `json:"channel_status"`
+	HealthStatus              string                               `json:"health_status"`
+	DisplayStatus             string                               `json:"display_status"`
+	NextProbeAt               int64                                `json:"next_probe_at"`
+	NextProbeRemainingSeconds int64                                `json:"next_probe_remaining_seconds"`
+	FailureCount              int                                  `json:"failure_count"`
+	FailureThreshold          int                                  `json:"failure_threshold"`
+	ProbeIntervalSeconds      int                                  `json:"probe_interval_seconds"`
+	LastFailureAt             int64                                `json:"last_failure_at"`
+	LastSuccessAt             int64                                `json:"last_success_at"`
+	AutoProbeEnabled          bool                                 `json:"auto_probe_enabled"`
+	CanProbe                  bool                                 `json:"can_probe"`
+	Models                    []string                             `json:"models"`
+	ProbeModels               []string                             `json:"probe_models"`
+	ProbeModelResults         []model.ChannelHealthProbeModelState `json:"probe_model_results"`
 }
 
 func ChannelHealthEnabled() bool {
@@ -245,6 +247,73 @@ func RecordChannelProbeFailure(c *gin.Context, channel *model.Channel, err *type
 	return decorateChannelHealthState(state), nil
 }
 
+func RecordChannelProbeModelSuccess(channelID int, modelName string) error {
+	if channelID <= 0 || strings.TrimSpace(modelName) == "" {
+		return nil
+	}
+	now := common.GetTimestamp()
+	state := model.ChannelHealthProbeModelState{
+		ChannelId:     channelID,
+		Model:         strings.TrimSpace(modelName),
+		Status:        model.ChannelHealthStatusHealthy,
+		LastProbeAt:   now,
+		LastSuccessAt: now,
+		UpdatedAt:     now,
+	}
+	var existing model.ChannelHealthProbeModelState
+	err := model.DB.Where("channel_id = ? AND model = ?", state.ChannelId, state.Model).First(&existing).Error
+	if err == nil {
+		existing.Status = state.Status
+		existing.LastProbeAt = now
+		existing.LastSuccessAt = now
+		existing.LastStatusCode = http.StatusOK
+		existing.LastErrorCode = ""
+		existing.LastError = ""
+		existing.UpdatedAt = now
+		return model.DB.Save(&existing).Error
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	state.LastStatusCode = http.StatusOK
+	return model.DB.Create(&state).Error
+}
+
+func RecordChannelProbeModelFailure(channelID int, modelName string, apiErr *types.NewAPIError) error {
+	if channelID <= 0 || strings.TrimSpace(modelName) == "" || apiErr == nil {
+		return nil
+	}
+	now := common.GetTimestamp()
+	modelName = strings.TrimSpace(modelName)
+	var existing model.ChannelHealthProbeModelState
+	err := model.DB.Where("channel_id = ? AND model = ?", channelID, modelName).First(&existing).Error
+	if err == nil {
+		existing.Status = model.ChannelHealthStatusUnhealthy
+		existing.LastProbeAt = now
+		existing.LastFailureAt = now
+		existing.LastStatusCode = apiErr.StatusCode
+		existing.LastErrorCode = trimForColumn(string(apiErr.GetErrorCode()), 128)
+		existing.LastError = common.LocalLogPreview(apiErr.MaskSensitiveErrorWithStatusCode())
+		existing.UpdatedAt = now
+		return model.DB.Save(&existing).Error
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	state := model.ChannelHealthProbeModelState{
+		ChannelId:      channelID,
+		Model:          modelName,
+		Status:         model.ChannelHealthStatusUnhealthy,
+		LastProbeAt:    now,
+		LastFailureAt:  now,
+		LastStatusCode: apiErr.StatusCode,
+		LastErrorCode:  trimForColumn(string(apiErr.GetErrorCode()), 128),
+		LastError:      common.LocalLogPreview(apiErr.MaskSensitiveErrorWithStatusCode()),
+		UpdatedAt:      now,
+	}
+	return model.DB.Create(&state).Error
+}
+
 func ListDueChannelHealthStates(limit int) ([]model.ChannelHealthState, error) {
 	if !ChannelHealthEnabled() {
 		return nil, nil
@@ -332,6 +401,135 @@ func GetChannelHealthMap(channelIDs []int) (map[int]model.ChannelHealthState, er
 	return result, nil
 }
 
+func GetChannelHealthGroupStateMap(channelIDs []int, groups []string) (map[int]map[string]model.ChannelHealthGroupState, error) {
+	result := make(map[int]map[string]model.ChannelHealthGroupState, len(channelIDs))
+	if len(channelIDs) == 0 || len(groups) == 0 {
+		return result, nil
+	}
+	normalizedGroups := make([]string, 0, len(groups))
+	seenGroups := make(map[string]struct{}, len(groups))
+	for _, group := range groups {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			continue
+		}
+		if _, ok := seenGroups[group]; ok {
+			continue
+		}
+		seenGroups[group] = struct{}{}
+		normalizedGroups = append(normalizedGroups, group)
+	}
+	if len(normalizedGroups) == 0 {
+		return result, nil
+	}
+	var states []model.ChannelHealthGroupState
+	if err := model.DB.Where("channel_id IN ? AND group_name IN ?", channelIDs, normalizedGroups).Find(&states).Error; err != nil {
+		return result, err
+	}
+	for _, state := range states {
+		if result[state.ChannelId] == nil {
+			result[state.ChannelId] = make(map[string]model.ChannelHealthGroupState)
+		}
+		result[state.ChannelId][state.GroupName] = state
+	}
+	return result, nil
+}
+
+func GetChannelHealthProbeModelStateMap(channelIDs []int) (map[int]map[string]model.ChannelHealthProbeModelState, error) {
+	result := make(map[int]map[string]model.ChannelHealthProbeModelState, len(channelIDs))
+	if len(channelIDs) == 0 {
+		return result, nil
+	}
+	var states []model.ChannelHealthProbeModelState
+	if err := model.DB.Where("channel_id IN ?", channelIDs).Find(&states).Error; err != nil {
+		return result, err
+	}
+	for _, state := range states {
+		if result[state.ChannelId] == nil {
+			result[state.ChannelId] = make(map[string]model.ChannelHealthProbeModelState)
+		}
+		result[state.ChannelId][state.Model] = state
+	}
+	return result, nil
+}
+
+func channelModelList(models string) []string {
+	parts := strings.Split(models, ",")
+	result := make([]string, 0, len(parts))
+	for _, modelName := range parts {
+		modelName = strings.TrimSpace(modelName)
+		if modelName == "" {
+			continue
+		}
+		result = append(result, modelName)
+	}
+	return result
+}
+
+func effectiveChannelProbeModelsFromState(state *model.ChannelHealthState, channelModels []string, testModel string) []string {
+	configured := model.DecodeChannelHealthProbeModels("")
+	if state != nil {
+		configured = model.DecodeChannelHealthProbeModels(state.ProbeModels)
+	}
+	configured = model.NormalizeChannelHealthProbeModels(configured, channelModels)
+	if len(configured) > 0 {
+		return configured
+	}
+	testModel = strings.TrimSpace(testModel)
+	if testModel != "" {
+		if models := model.NormalizeChannelHealthProbeModels([]string{testModel}, channelModels); len(models) > 0 {
+			return models
+		}
+	}
+	return model.NormalizeChannelHealthProbeModels(channelModels, nil)
+}
+
+func EffectiveChannelProbeModels(channel *model.Channel, state *model.ChannelHealthState) []string {
+	if channel == nil {
+		return nil
+	}
+	testModel := ""
+	if channel.TestModel != nil {
+		testModel = *channel.TestModel
+	}
+	return effectiveChannelProbeModelsFromState(state, channel.GetModels(), testModel)
+}
+
+func AttachChannelHealthProbeModelResults(state *model.ChannelHealthState, channel *model.Channel) *model.ChannelHealthState {
+	if state == nil || channel == nil {
+		return state
+	}
+	probeModels := EffectiveChannelProbeModels(channel, state)
+	state.ConfiguredProbeModels = probeModels
+	resultMap, err := GetChannelHealthProbeModelStateMap([]int{channel.Id})
+	if err != nil {
+		common.SysLog("failed to attach channel probe model results: " + err.Error())
+		return state
+	}
+	state.ProbeModelResults = probeModelResultsForDisplay(channel.Id, probeModels, resultMap)
+	return state
+}
+
+func probeModelResultsForDisplay(channelID int, probeModels []string, resultMap map[int]map[string]model.ChannelHealthProbeModelState) []model.ChannelHealthProbeModelState {
+	if len(probeModels) == 0 {
+		return nil
+	}
+	results := make([]model.ChannelHealthProbeModelState, 0, len(probeModels))
+	byModel := resultMap[channelID]
+	for _, modelName := range probeModels {
+		if result, ok := byModel[modelName]; ok {
+			results = append(results, result)
+			continue
+		}
+		results = append(results, model.ChannelHealthProbeModelState{
+			ChannelId: channelID,
+			Model:     modelName,
+			Status:    "",
+		})
+	}
+	return results
+}
+
 func GetUserChannelStatus(userGroup string, includeAll bool) (UserChannelStatusResponse, error) {
 	usableGroups, err := channelStatusVisibleGroups(userGroup, includeAll)
 	if err != nil {
@@ -353,11 +551,13 @@ func GetUserChannelStatus(userGroup string, includeAll bool) (UserChannelStatusR
 		ChannelID     int    `gorm:"column:channel_id"`
 		ChannelName   string `gorm:"column:channel_name"`
 		ChannelStatus int    `gorm:"column:channel_status"`
+		ChannelModels string `gorm:"column:channel_models"`
+		TestModel     string `gorm:"column:test_model"`
 	}
 	var rows []visibleChannelRow
 	err = model.DB.Table("abilities").
 		Select(
-			model.QualifiedGroupColumn("abilities")+" AS pricing_group, abilities.model, channels.id AS channel_id, channels.name AS channel_name, channels.status AS channel_status",
+			model.QualifiedGroupColumn("abilities")+" AS pricing_group, abilities.model, channels.id AS channel_id, channels.name AS channel_name, channels.status AS channel_status, channels.models AS channel_models, channels.test_model AS test_model",
 		).
 		Joins("JOIN channels ON channels.id = abilities.channel_id").
 		Where(model.QualifiedGroupColumn("abilities")+" IN ?", groups).
@@ -379,6 +579,14 @@ func GetUserChannelStatus(userGroup string, includeAll bool) (UserChannelStatusR
 		}
 	}
 	healthMap, err := GetChannelHealthMap(channelIDs)
+	if err != nil {
+		return UserChannelStatusResponse{}, err
+	}
+	groupStateMap, err := GetChannelHealthGroupStateMap(channelIDs, groups)
+	if err != nil {
+		return UserChannelStatusResponse{}, err
+	}
+	probeResultMap, err := GetChannelHealthProbeModelStateMap(channelIDs)
 	if err != nil {
 		return UserChannelStatusResponse{}, err
 	}
@@ -409,11 +617,24 @@ func GetUserChannelStatus(userGroup string, includeAll bool) (UserChannelStatusR
 			}
 			decorated := decorateChannelHealthState(&state)
 			groupThreshold := groupThresholds[row.PricingGroup]
+			var groupStatePtr *model.ChannelHealthGroupState
+			if statesByGroup := groupStateMap[row.ChannelID]; statesByGroup != nil {
+				if groupState, ok := statesByGroup[row.PricingGroup]; ok {
+					groupStatePtr = &groupState
+				}
+			}
 			effectiveHealthStatus := decorated.Status
-			groupUnavailable := model.IsChannelHealthUnavailableForThreshold(&state, groupThreshold)
+			groupUnavailable := model.IsChannelHealthUnavailableForGroupState(&state, groupStatePtr, row.PricingGroup, groupThreshold)
 			if !groupUnavailable && decorated.Status == model.ChannelHealthStatusUnhealthy {
 				effectiveHealthStatus = model.ChannelHealthStatusSuspect
 			}
+			if groupStatePtr != nil {
+				effectiveHealthStatus = groupStatePtr.Status
+				if groupUnavailable {
+					effectiveHealthStatus = model.ChannelHealthStatusUnhealthy
+				}
+			}
+			probeModels := effectiveChannelProbeModelsFromState(&state, channelModelList(row.ChannelModels), row.TestModel)
 			displayStatus := "normal"
 			if groupUnavailable ||
 				row.ChannelStatus == common.ChannelStatusAutoDisabled {
@@ -438,6 +659,8 @@ func GetUserChannelStatus(userGroup string, includeAll bool) (UserChannelStatusR
 				AutoProbeEnabled:          decorated.AutoProbeEnabled,
 				CanProbe:                  includeAll && row.ChannelStatus != common.ChannelStatusManuallyDisabled,
 				Models:                    []string{},
+				ProbeModels:               probeModels,
+				ProbeModelResults:         probeModelResultsForDisplay(row.ChannelID, probeModels, probeResultMap),
 			}
 			channelMap[itemKey] = item
 			modelSetMap[itemKey] = make(map[string]struct{})
@@ -568,6 +791,11 @@ func recordChannelHealthFailureWithEvent(channelID int, ctx ChannelHealthContext
 		if err := tx.Save(state).Error; err != nil {
 			return err
 		}
+		if !isProbe && strings.TrimSpace(ctx.Group) != "" {
+			if err := recordChannelHealthGroupFailureTx(tx, channelID, ctx, apiErr, now); err != nil {
+				return err
+			}
+		}
 		if err := createChannelHealthEvent(tx, state, ctx, eventType, fromStatus, state.Status, apiErr.StatusCode, string(apiErr.GetErrorCode()), state.LastError); err != nil {
 			return err
 		}
@@ -608,6 +836,15 @@ func recordChannelHealthSuccess(channelID int, ctx ChannelHealthContext, eventTy
 		}
 		if err := tx.Save(state).Error; err != nil {
 			return err
+		}
+		if isProbe {
+			if err := resetChannelHealthGroupStatesTx(tx, channelID, now); err != nil {
+				return err
+			}
+		} else if strings.TrimSpace(ctx.Group) != "" {
+			if err := recordChannelHealthGroupSuccessTx(tx, channelID, ctx, now); err != nil {
+				return err
+			}
 		}
 		shouldRecordEvent := isProbe ||
 			fromStatus == model.ChannelHealthStatusUnhealthy ||
@@ -658,6 +895,99 @@ func getOrCreateChannelHealthStateForUpdate(tx *gorm.DB, channelID int, now int6
 	return &state, nil
 }
 
+func getOrCreateChannelHealthGroupStateForUpdate(tx *gorm.DB, channelID int, group string, now int64) (*model.ChannelHealthGroupState, error) {
+	group = strings.TrimSpace(group)
+	if channelID <= 0 || group == "" {
+		return nil, nil
+	}
+	var state model.ChannelHealthGroupState
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("channel_id = ? AND group_name = ?", channelID, group).
+		First(&state).Error
+	if err == nil {
+		if state.Status == "" {
+			state.Status = model.ChannelHealthStatusHealthy
+		}
+		return &state, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	state = model.ChannelHealthGroupState{
+		ChannelId: channelID,
+		GroupName: group,
+		Status:    model.ChannelHealthStatusHealthy,
+		UpdatedAt: now,
+	}
+	if err := tx.Create(&state).Error; err != nil {
+		return nil, err
+	}
+	return &state, nil
+}
+
+func recordChannelHealthGroupFailureTx(tx *gorm.DB, channelID int, ctx ChannelHealthContext, apiErr *types.NewAPIError, now int64) error {
+	if apiErr == nil {
+		return nil
+	}
+	group := strings.TrimSpace(ctx.Group)
+	if channelID <= 0 || group == "" {
+		return nil
+	}
+	state, err := getOrCreateChannelHealthGroupStateForUpdate(tx, channelID, group, now)
+	if err != nil || state == nil {
+		return err
+	}
+	threshold := model.GetChannelHealthGroupFailureThreshold(group)
+	state.FailureCount++
+	state.LastFailureAt = now
+	state.LastStatusCode = apiErr.StatusCode
+	state.LastErrorCode = trimForColumn(string(apiErr.GetErrorCode()), 128)
+	state.LastError = common.LocalLogPreview(apiErr.MaskSensitiveErrorWithStatusCode())
+	state.LastModel = trimForColumn(ctx.Model, 255)
+	state.LastTokenId = ctx.TokenID
+	state.LastRequestId = trimForColumn(ctx.RequestID, 64)
+	state.UpdatedAt = now
+	if threshold > 0 && state.FailureCount >= threshold {
+		state.Status = model.ChannelHealthStatusUnhealthy
+	} else {
+		state.Status = model.ChannelHealthStatusSuspect
+	}
+	return tx.Save(state).Error
+}
+
+func recordChannelHealthGroupSuccessTx(tx *gorm.DB, channelID int, ctx ChannelHealthContext, now int64) error {
+	group := strings.TrimSpace(ctx.Group)
+	if channelID <= 0 || group == "" {
+		return nil
+	}
+	state, err := getOrCreateChannelHealthGroupStateForUpdate(tx, channelID, group, now)
+	if err != nil || state == nil {
+		return err
+	}
+	state.Status = model.ChannelHealthStatusHealthy
+	state.FailureCount = 0
+	state.LastSuccessAt = now
+	state.LastModel = trimForColumn(ctx.Model, 255)
+	state.LastTokenId = ctx.TokenID
+	state.LastRequestId = trimForColumn(ctx.RequestID, 64)
+	state.UpdatedAt = now
+	return tx.Save(state).Error
+}
+
+func resetChannelHealthGroupStatesTx(tx *gorm.DB, channelID int, now int64) error {
+	if channelID <= 0 {
+		return nil
+	}
+	return tx.Model(&model.ChannelHealthGroupState{}).
+		Where("channel_id = ?", channelID).
+		Updates(map[string]any{
+			"status":          model.ChannelHealthStatusHealthy,
+			"failure_count":   0,
+			"last_success_at": now,
+			"updated_at":      now,
+		}).Error
+}
+
 func UpdateChannelHealthProbeInterval(channelID int, intervalSeconds int) (*model.ChannelHealthState, error) {
 	if channelID <= 0 {
 		return nil, errors.New("invalid channel id")
@@ -685,6 +1015,45 @@ func UpdateChannelHealthProbeInterval(channelID int, intervalSeconds int) (*mode
 	return decorateChannelHealthState(result), err
 }
 
+func UpdateChannelHealthProbeModels(channel *model.Channel, probeModels []string) (*model.ChannelHealthState, error) {
+	if channel == nil || channel.Id <= 0 {
+		return nil, errors.New("invalid channel")
+	}
+	allowedModels := channel.GetModels()
+	normalized := model.NormalizeChannelHealthProbeModels(probeModels, allowedModels)
+	if len(normalized) == 0 {
+		return nil, errors.New("probe models must include at least one current channel model")
+	}
+	encoded, err := model.EncodeChannelHealthProbeModels(normalized)
+	if err != nil {
+		return nil, err
+	}
+	now := common.GetTimestamp()
+	threshold := model.GetChannelHealthMinimumPositiveFailureThreshold(channel.Id)
+	var result *model.ChannelHealthState
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		state, err := getOrCreateChannelHealthStateForUpdate(tx, channel.Id, now, threshold)
+		if err != nil {
+			return err
+		}
+		state.ProbeModels = encoded
+		state.FailureThreshold = threshold
+		state.UpdatedAt = now
+		if state.Status == model.ChannelHealthStatusUnhealthy {
+			state.NextProbeAt = now
+		}
+		if err := tx.Save(state).Error; err != nil {
+			return err
+		}
+		result = state
+		return nil
+	})
+	if result != nil {
+		result.ConfiguredProbeModels = normalized
+	}
+	return AttachChannelHealthProbeModelResults(decorateChannelHealthState(result), channel), err
+}
+
 func UpdateChannelHealthGroupFailureThreshold(group string, threshold int) (*model.ChannelHealthGroupSetting, error) {
 	group = strings.TrimSpace(group)
 	if group == "" {
@@ -710,11 +1079,34 @@ func reconcileChannelHealthThresholdsForGroup(group string, now int64) error {
 		return err
 	}
 	for _, channelID := range channelIDs {
+		if err := reconcileChannelHealthGroupThreshold(channelID, group, now); err != nil {
+			return err
+		}
 		if err := reconcileChannelHealthThreshold(channelID, now); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func reconcileChannelHealthGroupThreshold(channelID int, group string, now int64) error {
+	threshold := model.GetChannelHealthGroupFailureThreshold(group)
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		state, err := getOrCreateChannelHealthGroupStateForUpdate(tx, channelID, group, now)
+		if err != nil || state == nil {
+			return err
+		}
+		switch {
+		case threshold > 0 && model.IsChannelHealthGroupUnavailableForThreshold(state, threshold):
+			state.Status = model.ChannelHealthStatusUnhealthy
+		case state.FailureCount > 0:
+			state.Status = model.ChannelHealthStatusSuspect
+		default:
+			state.Status = model.ChannelHealthStatusHealthy
+		}
+		state.UpdatedAt = now
+		return tx.Save(state).Error
+	})
 }
 
 func reconcileChannelHealthThreshold(channelID int, now int64) error {
@@ -870,6 +1262,7 @@ func decorateChannelHealthState(state *model.ChannelHealthState) *model.ChannelH
 	now := common.GetTimestamp()
 	state.EffectiveProbeInterval = effectiveProbeIntervalSeconds(state)
 	state.AutoProbeEnabled = state.EffectiveProbeInterval >= 0
+	state.ConfiguredProbeModels = model.DecodeChannelHealthProbeModels(state.ProbeModels)
 	if state.Status == model.ChannelHealthStatusUnhealthy {
 		state.NextProbeAt = nextProbeAtForUnhealthyState(state, now)
 	} else if state.Status == model.ChannelHealthStatusProbing {
@@ -905,15 +1298,25 @@ func channelHealthUnavailableForAllAffectedGroups(state *model.ChannelHealthStat
 	}
 	groups := GetChannelAffectedGroups(state.ChannelId)
 	if len(groups) == 0 {
-		return state.Status == model.ChannelHealthStatusUnhealthy
+		return false
 	}
 	thresholds := model.GetChannelHealthGroupFailureThresholds(groups)
+	groupStateMap, err := GetChannelHealthGroupStateMap([]int{state.ChannelId}, groups)
+	if err != nil {
+		common.SysLog("failed to load channel health group states: " + err.Error())
+		return false
+	}
+	statesByGroup := groupStateMap[state.ChannelId]
 	for _, group := range groups {
 		threshold, ok := thresholds[group]
 		if !ok {
 			threshold = operation_setting.GetChannelHealthSetting().FailureThreshold
 		}
-		if !model.IsChannelHealthUnavailableForThreshold(state, threshold) {
+		groupState, ok := statesByGroup[group]
+		if !ok {
+			return false
+		}
+		if !model.IsChannelHealthUnavailableForGroupState(state, &groupState, group, threshold) {
 			return false
 		}
 	}

@@ -58,6 +58,23 @@ export const channelHealthSchema = z.object({
   affected_groups: z.string().optional(),
   next_probe_remaining_seconds: z.number().default(0),
   auto_probe_enabled: z.boolean().default(true),
+  probe_models: z.array(z.string()).default([]),
+  probe_model_results: z
+    .array(
+      z.object({
+        channel_id: z.number(),
+        model: z.string(),
+        status: z.string().default(''),
+        last_probe_at: z.number().default(0),
+        last_success_at: z.number().default(0),
+        last_failure_at: z.number().default(0),
+        last_status_code: z.number().default(0),
+        last_error_code: z.string().default(''),
+        last_error: z.string().default(''),
+        updated_at: z.number().default(0),
+      })
+    )
+    .default([]),
 })
 
 export type ChannelHealth = z.infer<typeof channelHealthSchema>
@@ -248,6 +265,19 @@ export interface UserChannelStatusItem {
   auto_probe_enabled: boolean
   can_probe: boolean
   models: string[]
+  probe_models: string[]
+  probe_model_results: Array<{
+    channel_id: number
+    model: string
+    status: string
+    last_probe_at: number
+    last_success_at: number
+    last_failure_at: number
+    last_status_code: number
+    last_error_code: string
+    last_error: string
+    updated_at: number
+  }>
 }
 
 export interface UserChannelStatusGroup {

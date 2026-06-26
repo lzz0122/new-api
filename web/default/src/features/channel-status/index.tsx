@@ -18,7 +18,16 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, AlertTriangle, Loader2, Radio, RefreshCw } from 'lucide-react'
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  Loader2,
+  Radio,
+  RefreshCw,
+  XCircle,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatTimestampToDate } from '@/lib/format'
@@ -26,7 +35,13 @@ import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import {
   Table,
   TableBody,
@@ -48,6 +63,7 @@ import {
   probeChannelHealth,
   updateChannelHealthGroupThreshold,
   updateChannelHealthProbeInterval,
+  updateChannelHealthProbeModels,
 } from '@/features/channels/api'
 import type {
   UserChannelStatusGroup,
@@ -138,6 +154,108 @@ function ModelsCell({ models }: { models: string[] }) {
   )
 }
 
+function ProbeModelsCell({
+  item,
+  isAdmin,
+  saving,
+  onChange,
+}: {
+  item: UserChannelStatusItem
+  isAdmin: boolean
+  saving: boolean
+  onChange: (item: UserChannelStatusItem, models: string[]) => void
+}) {
+  const { t } = useTranslation()
+  const selected = item.probe_models ?? []
+  const selectedSet = new Set(selected)
+  const results = item.probe_model_results ?? []
+  const resultByModel = new Map(results.map((result) => [result.model, result]))
+
+  const toggleModel = (model: string) => {
+    const next = selectedSet.has(model)
+      ? selected.filter((candidate) => candidate !== model)
+      : [...selected, model]
+    if (next.length === 0) {
+      toast.error(t('Select at least one probe model'))
+      return
+    }
+    onChange(item, next)
+  }
+
+  return (
+    <div className='flex min-w-0 flex-col gap-1.5'>
+      <div className='flex max-w-full flex-wrap gap-1 overflow-hidden'>
+        {selected.length === 0 && (
+          <span className='text-muted-foreground text-sm'>-</span>
+        )}
+        {selected.slice(0, 3).map((model) => {
+          const result = resultByModel.get(model)
+          const success = result?.status === 'healthy'
+          const failed = result?.status === 'unhealthy'
+          return (
+            <Badge
+              key={model}
+              variant={failed ? 'destructive' : success ? 'secondary' : 'outline'}
+              className='max-w-44 truncate'
+              title={
+                failed
+                  ? `${model}: ${result?.last_error || t('Probe failed')}`
+                  : success
+                    ? `${model}: ${t('Probe succeeded')}`
+                    : model
+              }
+            >
+              {success && <CheckCircle2 />}
+              {failed && <XCircle />}
+              <span className='truncate'>{model}</span>
+            </Badge>
+          )
+        })}
+        {selected.length > 3 && <Badge variant='outline'>+{selected.length - 3}</Badge>}
+      </div>
+      {isAdmin && (
+        <Popover>
+          <PopoverTrigger
+            render={
+              <Button
+                type='button'
+                variant='outline'
+                size='sm'
+                disabled={saving}
+                className='h-7 w-fit gap-1.5 px-2'
+              />
+            }
+          >
+            {saving ? (
+              <Loader2 className='animate-spin' />
+            ) : (
+              <ChevronDown className='size-3.5' />
+            )}
+            {t('Probe models')}
+          </PopoverTrigger>
+          <PopoverContent align='start' className='max-h-80 w-80 overflow-auto'>
+            <div className='flex flex-col gap-1'>
+              {item.models.map((model) => (
+                <label
+                  key={model}
+                  className='hover:bg-muted flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm'
+                >
+                  <Checkbox
+                    checked={selectedSet.has(model)}
+                    disabled={saving}
+                    onCheckedChange={() => toggleModel(model)}
+                  />
+                  <span className='truncate'>{model}</span>
+                </label>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
+    </div>
+  )
+}
+
 function NumberConfigInput({
   value,
   disabled,
@@ -207,9 +325,11 @@ function ChannelGroupTable({
   isAdmin,
   probingChannelID,
   savingProbeIntervalID,
+  savingProbeModelsID,
   savingGroupThreshold,
   onProbe,
   onProbeIntervalChange,
+  onProbeModelsChange,
   onGroupThresholdChange,
 }: {
   group: UserChannelStatusGroup
@@ -217,9 +337,11 @@ function ChannelGroupTable({
   isAdmin: boolean
   probingChannelID: number | null
   savingProbeIntervalID: number | null
+  savingProbeModelsID: number | null
   savingGroupThreshold: string | null
   onProbe: (item: UserChannelStatusItem) => void
   onProbeIntervalChange: (item: UserChannelStatusItem, value: number) => void
+  onProbeModelsChange: (item: UserChannelStatusItem, models: string[]) => void
   onGroupThresholdChange: (group: UserChannelStatusGroup, value: number) => void
 }) {
   const { t } = useTranslation()
@@ -272,12 +394,13 @@ function ChannelGroupTable({
         </div>
       </div>
       <div className='overflow-x-auto'>
-        <Table className='min-w-[1040px] table-fixed'>
+        <Table className='min-w-[1280px] table-fixed'>
           <TableHeader>
             <TableRow>
-              <TableHead className='w-[24%]'>{t('Channel')}</TableHead>
+              <TableHead className='w-[20%]'>{t('Channel')}</TableHead>
               <TableHead className='w-48'>{t('Status')}</TableHead>
-              <TableHead className='w-[26%]'>{t('Models')}</TableHead>
+              <TableHead className='w-[22%]'>{t('Models')}</TableHead>
+              <TableHead className='w-[22%]'>{t('Probe models')}</TableHead>
               <TableHead className='w-48'>{t('Last failure')}</TableHead>
               <TableHead className='w-36'>{t('Probe interval')}</TableHead>
               <TableHead className='w-20 text-right'>{t('Actions')}</TableHead>
@@ -296,6 +419,14 @@ function ChannelGroupTable({
                 </TableCell>
                 <TableCell className='whitespace-normal'>
                   <ModelsCell models={item.models} />
+                </TableCell>
+                <TableCell className='whitespace-normal'>
+                  <ProbeModelsCell
+                    item={item}
+                    isAdmin={isAdmin}
+                    saving={savingProbeModelsID === item.channel_id}
+                    onChange={onProbeModelsChange}
+                  />
                 </TableCell>
                 <TableCell className='text-muted-foreground w-48'>
                   {item.last_failure_at
@@ -351,7 +482,7 @@ function ChannelGroupTable({
             {group.channels.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className='text-muted-foreground h-24 text-center'
                 >
                   {t('No channels available')}
@@ -377,6 +508,9 @@ export function ChannelStatus() {
   const [savingProbeIntervalID, setSavingProbeIntervalID] = useState<
     number | null
   >(null)
+  const [savingProbeModelsID, setSavingProbeModelsID] = useState<number | null>(
+    null
+  )
   const [savingGroupThreshold, setSavingGroupThreshold] = useState<
     string | null
   >(null)
@@ -466,6 +600,33 @@ export function ChannelStatus() {
       setSavingGroupThreshold(null)
     },
   })
+  const probeModelsMutation = useMutation({
+    mutationFn: async ({
+      channelID,
+      models,
+    }: {
+      channelID: number
+      models: string[]
+    }) => {
+      setSavingProbeModelsID(channelID)
+      return updateChannelHealthProbeModels(channelID, models)
+    },
+    onSuccess: (response) => {
+      if (response.success) {
+        toast.success(t('Probe models updated'))
+      } else {
+        toast.error(response.message || t('Failed to update probe models'))
+      }
+      queryClient.invalidateQueries({ queryKey: ['channel-status'] })
+      queryClient.invalidateQueries({ queryKey: ['channels'] })
+    },
+    onError: () => {
+      toast.error(t('Failed to update probe models'))
+    },
+    onSettled: () => {
+      setSavingProbeModelsID(null)
+    },
+  })
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -526,12 +687,19 @@ export function ChannelStatus() {
               isAdmin={isAdmin}
               probingChannelID={probingChannelID}
               savingProbeIntervalID={savingProbeIntervalID}
+              savingProbeModelsID={savingProbeModelsID}
               savingGroupThreshold={savingGroupThreshold}
               onProbe={(item) => probeMutation.mutate(item)}
               onProbeIntervalChange={(item, value) =>
                 probeIntervalMutation.mutate({
                   channelID: item.channel_id,
                   value,
+                })
+              }
+              onProbeModelsChange={(item, models) =>
+                probeModelsMutation.mutate({
+                  channelID: item.channel_id,
+                  models,
                 })
               }
               onGroupThresholdChange={(group, value) =>
