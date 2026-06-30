@@ -392,7 +392,7 @@ func ListDueChannelHealthStates(limit int) ([]model.ChannelHealthState, error) {
 	var states []model.ChannelHealthState
 	err := model.DB.
 		Where(
-			"(status = ? AND ((probe_interval_seconds IS NOT NULL AND probe_interval_seconds >= 0) OR (probe_interval_seconds IS NULL AND ? >= 0)) AND ((next_probe_at > 0 AND next_probe_at <= ?) OR (next_probe_at <= 0 AND (CASE WHEN updated_at >= last_probe_at AND updated_at >= last_failure_at THEN updated_at WHEN last_probe_at > last_failure_at THEN last_probe_at WHEN last_failure_at > updated_at THEN last_failure_at ELSE updated_at END) + CASE WHEN probe_interval_seconds IS NOT NULL THEN probe_interval_seconds ELSE ? END <= ?))) OR (status = ? AND probe_started_at > 0 AND probe_started_at <= ?)",
+			"(status = ? AND ((probe_interval_seconds IS NOT NULL AND probe_interval_seconds > 0) OR (probe_interval_seconds IS NULL AND ? > 0)) AND ((next_probe_at > 0 AND next_probe_at <= ?) OR (next_probe_at <= 0 AND (CASE WHEN updated_at >= last_probe_at AND updated_at >= last_failure_at THEN updated_at WHEN last_probe_at > last_failure_at THEN last_probe_at WHEN last_failure_at > updated_at THEN last_failure_at ELSE updated_at END) + CASE WHEN probe_interval_seconds IS NOT NULL THEN probe_interval_seconds ELSE ? END <= ?))) OR (status = ? AND probe_started_at > 0 AND probe_started_at <= ?)",
 			model.ChannelHealthStatusUnhealthy,
 			operation_setting.GetChannelHealthSetting().ProbeIntervalSeconds,
 			now,
@@ -1069,7 +1069,20 @@ func UpdateChannelHealthProbeInterval(channelID int, intervalSeconds int) (*mode
 		state.ProbeIntervalSeconds = &intervalSeconds
 		state.FailureThreshold = threshold
 		state.UpdatedAt = now
-		if state.Status == model.ChannelHealthStatusUnhealthy {
+		if intervalSeconds <= 0 {
+			state.NextProbeAt = 0
+			state.ProbeStartedAt = 0
+			if state.Status == model.ChannelHealthStatusProbing {
+				switch {
+				case threshold > 0 && state.FailureCount >= threshold:
+					state.Status = model.ChannelHealthStatusUnhealthy
+				case state.FailureCount > 0:
+					state.Status = model.ChannelHealthStatusSuspect
+				default:
+					state.Status = model.ChannelHealthStatusHealthy
+				}
+			}
+		} else if state.Status == model.ChannelHealthStatusUnhealthy {
 			state.NextProbeAt = nextProbeAtForUnhealthyState(state, now)
 		}
 		if err := tx.Save(state).Error; err != nil {
@@ -1135,7 +1148,7 @@ func DeferChannelHealthProbe(channelID int, nextProbeAt int64, reason string) (*
 		fromStatus := state.Status
 		if nextProbeAt <= now {
 			interval := effectiveProbeIntervalSeconds(state)
-			if interval >= 0 {
+			if interval > 0 {
 				nextProbeAt = now + int64(interval)
 			} else {
 				nextProbeAt = 0
@@ -1308,7 +1321,7 @@ func defaultChannelHealthState(channelID int) *model.ChannelHealthState {
 		ChannelId:              channelID,
 		Status:                 model.ChannelHealthStatusHealthy,
 		FailureThreshold:       operation_setting.GetChannelHealthSetting().FailureThreshold,
-		AutoProbeEnabled:       effectiveInterval >= 0,
+		AutoProbeEnabled:       effectiveInterval > 0,
 		EffectiveProbeInterval: effectiveInterval,
 	}
 }
@@ -1339,10 +1352,14 @@ func effectiveProbeIntervalSeconds(state *model.ChannelHealthState) int {
 
 func nextProbeAtForUnhealthyState(state *model.ChannelHealthState, now int64) int64 {
 	interval := effectiveProbeIntervalSeconds(state)
-	if state == nil || interval < 0 {
+	if state == nil || interval <= 0 {
 		return 0
 	}
 	return nextProbeAnchorForState(state, now) + int64(interval)
+}
+
+func IsChannelHealthAutoProbeEnabled(state *model.ChannelHealthState) bool {
+	return effectiveProbeIntervalSeconds(state) > 0
 }
 
 func RescheduleUnhealthyChannelHealthProbes() error {
@@ -1354,7 +1371,7 @@ func RescheduleUnhealthyChannelHealthProbes() error {
 	return model.DB.Model(&model.ChannelHealthState{}).
 		Where("status = ?", model.ChannelHealthStatusUnhealthy).
 		Updates(map[string]any{
-			"next_probe_at": gorm.Expr("CASE WHEN probe_interval_seconds IS NOT NULL AND probe_interval_seconds < 0 THEN 0 WHEN probe_interval_seconds IS NOT NULL THEN ? + probe_interval_seconds WHEN ? >= 0 THEN ? + ? ELSE 0 END", now, setting.ProbeIntervalSeconds, now, setting.ProbeIntervalSeconds),
+			"next_probe_at": gorm.Expr("CASE WHEN probe_interval_seconds IS NOT NULL AND probe_interval_seconds <= 0 THEN 0 WHEN probe_interval_seconds IS NOT NULL THEN ? + probe_interval_seconds WHEN ? > 0 THEN ? + ? ELSE 0 END", now, setting.ProbeIntervalSeconds, now, setting.ProbeIntervalSeconds),
 			"updated_at":    now,
 		}).Error
 }
@@ -1372,7 +1389,7 @@ func decorateChannelHealthState(state *model.ChannelHealthState) *model.ChannelH
 	}
 	now := common.GetTimestamp()
 	state.EffectiveProbeInterval = effectiveProbeIntervalSeconds(state)
-	state.AutoProbeEnabled = state.EffectiveProbeInterval >= 0
+	state.AutoProbeEnabled = state.EffectiveProbeInterval > 0
 	state.ConfiguredProbeModels = model.DecodeChannelHealthProbeModels(state.ProbeModels)
 	if !state.AutoProbeEnabled {
 		state.NextProbeAt = 0

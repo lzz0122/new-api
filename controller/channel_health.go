@@ -244,6 +244,10 @@ func runChannelHealthProbe(channel *model.Channel, testUserID int, manual bool) 
 	if state, ok := healthMap[channel.Id]; ok {
 		existingState = &state
 	}
+	if !manual && !service.IsChannelHealthAutoProbeEnabled(existingState) {
+		service.CancelChannelHealthProbe(channel.Id)
+		return nil, nil, nil
+	}
 	probeModels := service.EffectiveChannelProbeModels(channel, existingState)
 	if len(probeModels) == 0 {
 		return nil, nil, fmt.Errorf("channel #%d has no probe models", channel.Id)

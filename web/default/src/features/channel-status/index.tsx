@@ -24,6 +24,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Loader2,
+  PauseCircle,
   Radio,
   RefreshCw,
   XCircle,
@@ -331,6 +332,7 @@ function ChannelGroupTable({
   savingGroupThreshold,
   onProbe,
   onMarkHealthy,
+  onDisableProbe,
   onProbeIntervalChange,
   onProbeModelsChange,
   onGroupThresholdChange,
@@ -345,6 +347,7 @@ function ChannelGroupTable({
   savingGroupThreshold: string | null
   onProbe: (item: UserChannelStatusItem) => void
   onMarkHealthy: (item: UserChannelStatusItem) => void
+  onDisableProbe: (item: UserChannelStatusItem) => void
   onProbeIntervalChange: (item: UserChannelStatusItem, value: number) => void
   onProbeModelsChange: (item: UserChannelStatusItem, models: string[]) => void
   onGroupThresholdChange: (group: UserChannelStatusGroup, value: number) => void
@@ -408,7 +411,7 @@ function ChannelGroupTable({
               <TableHead className='w-[22%]'>{t('Probe models')}</TableHead>
               <TableHead className='w-48'>{t('Last failure')}</TableHead>
               <TableHead className='w-36'>{t('Probe interval')}</TableHead>
-              <TableHead className='w-28 text-right'>{t('Actions')}</TableHead>
+              <TableHead className='w-36 text-right'>{t('Actions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -454,7 +457,7 @@ function ChannelGroupTable({
                     </span>
                   )}
                 </TableCell>
-                <TableCell className='w-28'>
+                <TableCell className='w-36'>
                   {isAdmin && item.can_probe && (
                     <div className='flex justify-end gap-1'>
                       <TooltipProvider delay={100}>
@@ -484,6 +487,36 @@ function ChannelGroupTable({
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
+                      {item.auto_probe_enabled && (
+                        <TooltipProvider delay={100}>
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <Button
+                                  type='button'
+                                  variant='ghost'
+                                  size='icon-sm'
+                                  onClick={() => onDisableProbe(item)}
+                                  disabled={
+                                    probingChannelID === item.channel_id ||
+                                    markingHealthyChannelID === item.channel_id ||
+                                    savingProbeIntervalID === item.channel_id
+                                  }
+                                />
+                              }
+                            >
+                              {savingProbeIntervalID === item.channel_id ? (
+                                <Loader2 className='animate-spin' />
+                              ) : (
+                                <PauseCircle />
+                              )}
+                            </TooltipTrigger>
+                            <TooltipContent side='left'>
+                              {t('Disable auto probe')}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
                       <TooltipProvider delay={100}>
                         <Tooltip>
                           <TooltipTrigger
@@ -753,6 +786,12 @@ export function ChannelStatus() {
               savingGroupThreshold={savingGroupThreshold}
               onProbe={(item) => probeMutation.mutate(item)}
               onMarkHealthy={(item) => markHealthyMutation.mutate(item)}
+              onDisableProbe={(item) =>
+                probeIntervalMutation.mutate({
+                  channelID: item.channel_id,
+                  value: 0,
+                })
+              }
               onProbeIntervalChange={(item, value) =>
                 probeIntervalMutation.mutate({
                   channelID: item.channel_id,
