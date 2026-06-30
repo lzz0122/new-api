@@ -447,7 +447,7 @@ export function MonitoringSettingsSection({
                   </FormControl>
                   <FormDescription>
                     {t(
-                      'Set to a negative value to disable automatic probing; administrators can still probe manually'
+                      'Set to zero or a negative value to disable automatic probing; administrators can still probe manually'
                     )}
                   </FormDescription>
                   <FormMessage />

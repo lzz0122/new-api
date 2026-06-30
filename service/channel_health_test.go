@@ -34,12 +34,12 @@ func withChannelHealthSetting(t *testing.T, fn func(setting *operation_setting.C
 	})
 }
 
-func TestListDueChannelHealthStatesDisabledWhenProbeIntervalNegative(t *testing.T) {
+func TestListDueChannelHealthStatesDisabledWhenProbeIntervalNonPositive(t *testing.T) {
 	db := setupChannelHealthTestDB(t)
 	withChannelHealthSetting(t, func(setting *operation_setting.ChannelHealthSetting) {
 		setting.Enabled = true
 		setting.FailureThreshold = 3
-		setting.ProbeIntervalSeconds = -1
+		setting.ProbeIntervalSeconds = 0
 		setting.ProbeBatchSize = 10
 	})
 	require.NoError(t, db.Create(&model.ChannelHealthState{
@@ -68,6 +68,37 @@ func TestListDueChannelHealthStatesDisabledWhenProbeIntervalNegative(t *testing.
 	require.Zero(t, state.NextProbeRemainingSecond)
 }
 
+func TestListDueChannelHealthStatesDisabledWhenPerChannelProbeIntervalZero(t *testing.T) {
+	db := setupChannelHealthTestDB(t)
+	withChannelHealthSetting(t, func(setting *operation_setting.ChannelHealthSetting) {
+		setting.Enabled = true
+		setting.FailureThreshold = 3
+		setting.ProbeIntervalSeconds = 600
+		setting.ProbeBatchSize = 10
+	})
+	interval := 0
+	require.NoError(t, db.Create(&model.ChannelHealthState{
+		ChannelId:            7,
+		Status:               model.ChannelHealthStatusUnhealthy,
+		FailureCount:         3,
+		FailureThreshold:     3,
+		ProbeIntervalSeconds: &interval,
+		LastFailureAt:        100,
+		NextProbeAt:          101,
+		UpdatedAt:            100,
+	}).Error)
+
+	states, err := ListDueChannelHealthStates(10)
+	require.NoError(t, err)
+	require.Empty(t, states)
+
+	var stored model.ChannelHealthState
+	require.NoError(t, db.First(&stored, "channel_id = ?", 7).Error)
+	decorated := decorateChannelHealthState(&stored)
+	require.False(t, decorated.AutoProbeEnabled)
+	require.Zero(t, decorated.NextProbeAt)
+}
+
 func TestRescheduleUnhealthyChannelHealthProbesPreservesGroupThreshold(t *testing.T) {
 	db := setupChannelHealthTestDB(t)
 	withChannelHealthSetting(t, func(setting *operation_setting.ChannelHealthSetting) {
@@ -93,6 +124,42 @@ func TestRescheduleUnhealthyChannelHealthProbesPreservesGroupThreshold(t *testin
 	require.Equal(t, 3, state.FailureThreshold)
 	require.Greater(t, state.UpdatedAt, int64(100))
 	require.Equal(t, state.UpdatedAt+120, state.NextProbeAt)
+}
+
+func TestUpdateChannelHealthProbeIntervalZeroDisablesAndClearsNextProbe(t *testing.T) {
+	db := setupChannelHealthTestDB(t)
+	withChannelHealthSetting(t, func(setting *operation_setting.ChannelHealthSetting) {
+		setting.Enabled = true
+		setting.FailureThreshold = 3
+		setting.ProbeIntervalSeconds = 600
+		setting.ProbeBatchSize = 10
+	})
+	require.NoError(t, db.Create(&model.ChannelHealthState{
+		ChannelId:        4,
+		Status:           model.ChannelHealthStatusProbing,
+		FailureCount:     3,
+		FailureThreshold: 3,
+		LastFailureAt:    100,
+		NextProbeAt:      700,
+		ProbeStartedAt:   600,
+		UpdatedAt:        100,
+	}).Error)
+
+	state, err := UpdateChannelHealthProbeInterval(4, 0)
+	require.NoError(t, err)
+	require.NotNil(t, state)
+	require.False(t, state.AutoProbeEnabled)
+	require.Equal(t, 0, state.EffectiveProbeInterval)
+	require.Equal(t, model.ChannelHealthStatusUnhealthy, state.Status)
+	require.Zero(t, state.NextProbeAt)
+	require.Zero(t, state.ProbeStartedAt)
+
+	var stored model.ChannelHealthState
+	require.NoError(t, db.First(&stored, "channel_id = ?", 4).Error)
+	require.NotNil(t, stored.ProbeIntervalSeconds)
+	require.Equal(t, 0, *stored.ProbeIntervalSeconds)
+	require.Zero(t, stored.NextProbeAt)
+	require.Zero(t, stored.ProbeStartedAt)
 }
 
 func TestListDueChannelHealthStatesUsesPerChannelProbeInterval(t *testing.T) {
