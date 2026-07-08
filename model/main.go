@@ -31,7 +31,7 @@ func GroupColumn() string {
 	if strings.TrimSpace(commonGroupCol) != "" {
 		return commonGroupCol
 	}
-	if common.UsingPostgreSQL {
+	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
 		return `"group"`
 	}
 	return "`group`"

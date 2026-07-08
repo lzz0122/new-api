@@ -90,6 +90,7 @@ const (
 	LogTypeSystem  = 4
 	LogTypeError   = 5
 	LogTypeRefund  = 6
+	LogTypeLogin   = 7
 )
 
 func ensureLogRequestId(log *Log) {
@@ -121,6 +122,8 @@ func formatUserLogs(logs []*Log, startIdx int) {
 		if otherMap != nil {
 			// Remove admin-only debug fields.
 			delete(otherMap, "admin_info")
+			// Remove operation-audit details (operator/route info), admin-only.
+			delete(otherMap, "audit_info")
 			// delete(otherMap, "reject_reason")
 			delete(otherMap, "stream_status")
 		}
@@ -347,6 +350,20 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
 	createdAt := common.GetTimestamp()
+	carnivalSessionID := 0
+	if params.Quota > 0 && strings.TrimSpace(params.Group) != "" {
+		session, err := GetActiveCarnivalSession(params.Group)
+		if err != nil {
+			common.SysLog("failed to get active carnival session: " + err.Error())
+		} else if session != nil {
+			carnivalSessionID = session.Id
+			if params.Other == nil {
+				params.Other = map[string]interface{}{}
+			}
+			params.Other["carnival_session_id"] = session.Id
+			params.Other["carnival_started_at"] = session.StartedAt
+		}
+	}
 	otherStr := common.MapToJsonStr(params.Other)
 	// 判断是否需要记录 IP
 	needRecordIp := false
@@ -442,18 +459,19 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	}
 	createdAt := common.GetTimestamp()
 	log := &Log{
-		UserId:    params.UserId,
-		Username:  username,
-		CreatedAt: createdAt,
-		Type:      params.LogType,
-		Content:   params.Content,
-		TokenName: tokenName,
-		ModelName: params.ModelName,
-		Quota:     params.Quota,
-		ChannelId: params.ChannelId,
-		TokenId:   params.TokenId,
-		Group:     params.Group,
-		Other:     common.MapToJsonStr(params.Other),
+		UserId:            params.UserId,
+		Username:          username,
+		CreatedAt:         createdAt,
+		Type:              params.LogType,
+		Content:           params.Content,
+		TokenName:         tokenName,
+		ModelName:         params.ModelName,
+		Quota:             params.Quota,
+		ChannelId:         params.ChannelId,
+		TokenId:           params.TokenId,
+		Group:             params.Group,
+		CarnivalSessionID: carnivalSessionID,
+		Other:             common.MapToJsonStr(params.Other),
 	}
 	err := createLog(log)
 	if err != nil {

@@ -1,5 +1,11 @@
 package dto
 
+import (
+	"fmt"
+	"net/url"
+	"strings"
+)
+
 type ChannelSettings struct {
 	ForceFormat            bool   `json:"force_format,omitempty"`
 	ThinkingToContent      bool   `json:"thinking_to_content,omitempty"`

@@ -73,6 +73,7 @@ export const textColorMap = {
 } as const
 
 export type StatusVariant = keyof typeof dotColorMap
+export type StatusBadgeRenderType = 'badge' | 'text'
 
 const sizeMap = {
   sm: 'h-5 gap-1 px-1.5 text-sm leading-none',
@@ -85,6 +86,9 @@ const textSizeMap = {
   md: 'gap-1 text-sm leading-none',
   lg: 'gap-1.5 text-sm leading-none',
 } as const
+
+export const StatusBadgeTypeContext =
+  React.createContext<StatusBadgeRenderType>('badge')
 
 export interface StatusBadgeProps extends Omit<
   React.HTMLAttributes<HTMLSpanElement>,
@@ -119,6 +123,7 @@ export function StatusBadge({
   ...props
 }: StatusBadgeProps) {
   const { copyToClipboard } = useCopyToClipboard()
+  const renderType = React.useContext(StatusBadgeTypeContext)
 
   const computedVariant: StatusVariant = autoColor
     ? (stringToColor(autoColor) as StatusVariant)
@@ -139,8 +144,10 @@ export function StatusBadge({
     <span
       data-slot='status-badge'
       className={cn(
-        'inline-flex w-fit max-w-full shrink-0 items-center rounded-4xl font-medium tracking-normal whitespace-nowrap transition-colors',
-        sizeMap[size ?? 'sm'],
+        'inline-flex max-w-full shrink-0 items-center font-medium tracking-normal whitespace-nowrap transition-colors',
+        renderType === 'text'
+          ? textSizeMap[size ?? 'sm']
+          : ['w-fit rounded-4xl', sizeMap[size ?? 'sm']],
         textColorMap[computedVariant],
         pulse && 'animate-pulse',
         copyable &&

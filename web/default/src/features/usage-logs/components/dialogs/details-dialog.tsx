@@ -658,7 +658,6 @@ export function DetailsDialog(props: DetailsDialogProps) {
                   </div>
                 </div>
               </div>
-            </div>
           </DetailSection>
         )}
 
