@@ -1441,7 +1441,7 @@ func queryCarpoolLegacyUsageSegments(group string, start time.Time, end time.Tim
 
 func queryCarpoolLegacyDailyRows(start time.Time, end time.Time) ([]carpoolLegacyDailyRow, error) {
 	dateSelect := "usage_date"
-	if common.LogSqlType == common.DatabaseTypePostgreSQL || common.UsingPostgreSQL {
+	if common.UsingLogDatabase(common.DatabaseTypePostgreSQL) {
 		dateSelect = "usage_date::text"
 	}
 	query := LOG_DB.Table("carpool_usage_daily")
@@ -1508,7 +1508,7 @@ func queryCarpoolLegacyTailLogSegments(group string, startTimestamp int64, endTi
 }
 
 func getCarpoolLegacyLastSyncTimestamp() (int64, error) {
-	if common.LogSqlType == common.DatabaseTypePostgreSQL || common.UsingPostgreSQL {
+	if common.UsingLogDatabase(common.DatabaseTypePostgreSQL) {
 		var timestamp int64
 		err := LOG_DB.Raw("SELECT COALESCE(EXTRACT(EPOCH FROM MAX(synced_at))::bigint, 0) FROM carpool_usage_sync_runs").Scan(&timestamp).Error
 		if err != nil && isMissingCarpoolLegacyTableError(err) {
@@ -1516,7 +1516,7 @@ func getCarpoolLegacyLastSyncTimestamp() (int64, error) {
 		}
 		return timestamp, err
 	}
-	if common.UsingMySQL {
+	if common.UsingLogDatabase(common.DatabaseTypeMySQL) {
 		var timestamp int64
 		err := LOG_DB.Raw("SELECT COALESCE(UNIX_TIMESTAMP(MAX(synced_at)), 0) FROM carpool_usage_sync_runs").Scan(&timestamp).Error
 		if err != nil && isMissingCarpoolLegacyTableError(err) {

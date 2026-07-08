@@ -16,8 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { flexRender, type Table as TanstackTable } from '@tanstack/react-table'
+import {
+  flexRender,
+  type Header,
+  type Table as TanstackTable,
+} from '@tanstack/react-table'
+
 import { TableHead, TableHeader, TableRow } from '@/components/ui/table'
+
+import { DataTableColumnHeader } from './column-header'
+import { isContentSizedColumn } from './content-sized-columns'
 import type { DataTableColumnClassName } from './types'
 
 type DataTableHeaderProps<TData> = {
@@ -44,7 +52,7 @@ export function DataTableHeader<TData>({
               key={header.id}
               colSpan={header.colSpan}
               className={getColumnClassName?.(header.column.id, 'header')}
-              style={applyHeaderSize ? { width: header.getSize() } : undefined}
+              style={getHeaderSizeStyle(header, applyHeaderSize)}
             >
               {header.isPlaceholder
                 ? null
@@ -58,4 +66,31 @@ export function DataTableHeader<TData>({
       ))}
     </TableHeader>
   )
+}
+
+function getHeaderSizeStyle<TData>(
+  header: Header<TData, unknown>,
+  applyHeaderSize: boolean | undefined
+) {
+  if (!applyHeaderSize || isContentSizedColumn(header.column.id)) {
+    return undefined
+  }
+
+  return { width: header.getSize() }
+}
+
+function renderHeaderContent<TData>(header: Header<TData, unknown>) {
+  if (header.isPlaceholder) return null
+  const { header: headerDef, meta } = header.column.columnDef
+  // A string header means the user wrote e.g. `header: t('Name')` — auto-render
+  // with DataTableColumnHeader so sorting works without boilerplate.
+  // A function (including TanStack's default accessor-key fallback) is passed
+  // through as-is. meta.label is kept as a fallback for legacy columns.
+  if (typeof headerDef === 'string') {
+    return <DataTableColumnHeader column={header.column} title={headerDef} />
+  }
+  if (meta?.label) {
+    return <DataTableColumnHeader column={header.column} title={meta.label} />
+  }
+  return flexRender(headerDef, header.getContext())
 }

@@ -2,6 +2,7 @@ package helper
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -243,91 +244,76 @@ func TestStreamScannerHandler_DataWithExtraSpaces(t *testing.T) {
 	assert.Equal(t, "{\"trimmed\":true}", got)
 }
 
-// ---------- Decoupling ----------
-
-func TestStreamScannerHandler_ScannerDecoupledFromSlowHandler(t *testing.T) {
-	t.Parallel()
-
-	const numChunks = 50
-	const upstreamDelay = 10 * time.Millisecond
-	const handlerDelay = 20 * time.Millisecond
+// TestStreamScannerHandler_ClientCancelAbortsUpstreamAndReturns pins the
+// disconnect contract: when the client goes away, the handler must return
+// promptly (all goroutines joined, so the gin.Context can never leak into a
+// pooled reuse), the upstream body must be closed to stop token generation,
+// and no data received after the disconnect may be processed or written.
+func TestStreamScannerHandler_ClientCancelAbortsUpstreamAndReturns(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	pr, pw := io.Pipe()
-	go func() {
-		defer pw.Close()
-		for i := 0; i < numChunks; i++ {
-			fmt.Fprintf(pw, "data: {\"id\":%d}\n", i)
-			time.Sleep(upstreamDelay)
-		}
-		fmt.Fprint(pw, "data: [DONE]\n")
-	}()
+	t.Cleanup(func() {
+		_ = pr.Close()
+		_ = pw.Close()
+	})
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-
-	oldTimeout := constant.StreamingTimeout
-	constant.StreamingTimeout = 30
-	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil).WithContext(ctx)
 
 	resp := &http.Response{Body: pr}
-	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
-
-	var count atomic.Int64
-	start := time.Now()
-	done := make(chan struct{})
-	go func() {
-		StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {
-			time.Sleep(handlerDelay)
-			count.Add(1)
-		})
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(15 * time.Second):
-		t.Fatal("StreamScannerHandler did not complete in time")
+	info := &relaycommon.RelayInfo{
+		DisablePing: true,
+		ChannelMeta: &relaycommon.ChannelMeta{},
 	}
 
-	elapsed := time.Since(start)
-	assert.Equal(t, int64(numChunks), count.Load())
-
-	coupledTime := time.Duration(numChunks) * (upstreamDelay + handlerDelay)
-	t.Logf("elapsed=%v, coupled_estimate=%v", elapsed, coupledTime)
-
-	assert.Less(t, elapsed, coupledTime*85/100,
-		"decoupled elapsed time (%v) should be significantly less than coupled estimate (%v)", elapsed, coupledTime)
-}
-
-func TestStreamScannerHandler_SlowUpstreamFastHandler(t *testing.T) {
-	t.Parallel()
-
-	const numChunks = 50
-	body := buildSSEBody(numChunks)
-	reader := &slowReader{r: strings.NewReader(body), delay: 2 * time.Millisecond}
-	c, resp, info := setupStreamTest(t, reader)
-
 	var count atomic.Int64
-	start := time.Now()
-
+	firstHandled := make(chan struct{})
 	done := make(chan struct{})
 	go func() {
 		StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {
 			count.Add(1)
+			_ = StringData(c, data)
+			if data == "first" {
+				close(firstHandled)
+			}
 		})
 		close(done)
 	}()
 
+	_, err := fmt.Fprint(pw, "data: first\n")
+	require.NoError(t, err)
+
 	select {
-	case <-done:
-	case <-time.After(15 * time.Second):
-		t.Fatal("timed out with slow upstream")
+	case <-firstHandled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for first chunk")
 	}
 
-	elapsed := time.Since(start)
-	assert.Equal(t, int64(numChunks), count.Load())
-	t.Logf("slow upstream (%d chunks, 2ms/read): %v", numChunks, elapsed)
+	cancel()
+
+	// The handler must return without any further upstream input: cleanup
+	// closes resp.Body, which unblocks the scanner goroutine.
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler did not return after client disconnect")
+	}
+
+	// Upstream read side must be closed so the provider stops generating
+	// (and billing) for a request nobody is listening to.
+	_, err = fmt.Fprint(pw, "data: second\n")
+	require.ErrorIs(t, err, io.ErrClosedPipe, "upstream body should be closed after client disconnect")
+
+	assert.Equal(t, int64(1), count.Load(), "no chunk after disconnect should be processed")
+	require.NotNil(t, info.StreamStatus)
+	assert.Equal(t, relaycommon.StreamEndReasonClientGone, info.StreamStatus.EndReason)
+
+	body := recorder.Body.String()
+	assert.Contains(t, body, "first")
+	assert.NotContains(t, body, "second")
 }
 
 // ---------- Ping tests ----------

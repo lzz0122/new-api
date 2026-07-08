@@ -31,16 +31,17 @@ import {
   Info,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+
+import { Dialog } from '@/components/dialog'
+import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
-import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Dialog } from '@/components/dialog'
-import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
-import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
+
 import type { UsageLog } from '../../data/schema'
 import {
   parseLogOther,
@@ -127,6 +128,15 @@ function DetailSection(props: {
 function formatRatio(ratio: number | undefined): string {
   if (ratio == null) return '-'
   return ratio.toFixed(4)
+}
+
+function quotaSaturationKindLabel(
+  kind: 'overflow' | 'underflow' | 'nan',
+  t: (key: string) => string
+): string {
+  if (kind === 'overflow') return t('Overflow')
+  if (kind === 'underflow') return t('Underflow')
+  return t('Invalid (NaN)')
 }
 
 function BillingBreakdown(props: {
@@ -648,6 +658,380 @@ export function DetailsDialog(props: DetailsDialogProps) {
                   </div>
                 </div>
               </div>
+          </DetailSection>
+        )}
+
+        {/* Quota saturation marker (admin only) */}
+        {props.isAdmin && other?.admin_info?.quota_saturation && (
+          <DetailSection
+            icon={<AlertTriangle className='size-3.5' aria-hidden='true' />}
+            label={t('Quota clamped')}
+            variant='danger'
+          >
+            <p className='mb-1 text-xs wrap-break-word'>
+              {t('Quota saturation protection triggered')}
+            </p>
+            <DetailRow
+              label={t('Kind')}
+              value={quotaSaturationKindLabel(
+                other.admin_info.quota_saturation.kind,
+                t
+              )}
+            />
+            <DetailRow
+              label={t('Original value')}
+              value={String(other.admin_info.quota_saturation.original)}
+              mono
+            />
+            <DetailRow
+              label={t('Clamped to')}
+              value={String(other.admin_info.quota_saturation.clamped)}
+              mono
+            />
+            <DetailRow
+              label={t('Operation')}
+              value={other.admin_info.quota_saturation.op}
+              mono
+            />
+          </DetailSection>
+        )}
+
+        {/* Reject reason (admin only) */}
+        {props.isAdmin && other?.reject_reason && (
+          <DetailSection
+            icon={<AlertTriangle className='size-3.5' aria-hidden='true' />}
+            label={t('Reject Reason')}
+            variant='danger'
+          >
+            <p className='text-xs wrap-break-word'>{other.reject_reason}</p>
+          </DetailSection>
+        )}
+
+        {/* Violation fee info */}
+        {isViolation && other && (
+          <DetailSection
+            icon={<AlertTriangle className='size-3.5' aria-hidden='true' />}
+            label={t('Violation Fee')}
+            variant='danger'
+          >
+            {other.violation_fee_code && (
+              <DetailRow
+                label={t('Violation Code')}
+                value={other.violation_fee_code}
+                mono
+              />
+            )}
+            {other.violation_fee_marker && (
+              <DetailRow
+                label={t('Violation Marker')}
+                value={other.violation_fee_marker}
+              />
+            )}
+            <DetailRow
+              label={t('Fee Amount')}
+              value={formatLogQuota(other.fee_quota ?? props.log.quota)}
+              mono
+            />
+          </DetailSection>
+        )}
+
+        {/* Refund details (type=6) */}
+        {isRefund && other && (other.task_id || other.reason) && (
+          <DetailSection label={t('Refund Details')}>
+            {other.task_id && (
+              <DetailRow label={t('Task ID')} value={other.task_id} mono />
+            )}
+            {other.reason && (
+              <DetailRow label={t('Reason')} value={other.reason} />
+            )}
+          </DetailSection>
+        )}
+
+        {/* Top-up audit info (type=1, admin only) */}
+        {showTopupAuditSection && (
+          <DetailSection
+            icon={<ShieldCheck className='size-3.5' aria-hidden='true' />}
+            label={t('Top-up Audit Info')}
+          >
+            {topupAuditFields.map((field, idx) => (
+              <DetailRow
+                key={idx}
+                label={field.label}
+                value={field.value}
+                mono
+              />
+            ))}
+            {showLegacyTopupWarning && (
+              <div className='flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400'>
+                <Info className='mt-0.5 size-3.5 shrink-0' aria-hidden='true' />
+                <span>
+                  {t(
+                    'This historical record predates audit-info tracking and cannot be backfilled. The current instance already records server IP, callback IP, payment method, and system version for new top-ups going forward.'
+                  )}
+                </span>
+              </div>
+            )}
+          </DetailSection>
+        )}
+
+        {/* Manage operator (type=3, admin only) */}
+        {manageOperator && (
+          <DetailRow
+            label={
+              <span className='flex items-center gap-1.5'>
+                <UserCog
+                  className='text-muted-foreground size-3.5'
+                  aria-hidden='true'
+                />
+                {t('Operator Admin')}
+              </span>
+            }
+            value={manageOperator}
+            mono
+          />
+        )}
+
+        {/* Operation audit info (type=3, admin only) */}
+        {showManageAuditSection && (
+          <DetailSection
+            icon={<ShieldCheck className='size-3.5' aria-hidden='true' />}
+            label={t('Operation Audit Info')}
+          >
+            {operationText != null && (
+              <DetailRow label={t('Operation')} value={operationText} />
+            )}
+            {authMethodLabel !== '' && (
+              <DetailRow
+                label={t('Authentication Method')}
+                value={authMethodLabel}
+              />
+            )}
+            {changedFieldsText !== '' && (
+              <DetailRow
+                label={t('Changed Fields')}
+                value={changedFieldsText}
+              />
+            )}
+            {auditRoute?.method && auditRoute?.route && (
+              <DetailRow
+                label={t('Request')}
+                value={`${auditRoute.method} ${auditRoute.route}`}
+                mono
+              />
+            )}
+            {auditRoute?.status != null && (
+              <DetailRow
+                label={t('Result')}
+                value={
+                  auditRoute.success
+                    ? `${t('Success')} (${auditRoute.status})`
+                    : `${t('Failed')} (${auditRoute.status})`
+                }
+                mono
+              />
+            )}
+          </DetailSection>
+        )}
+
+        {/* Login audit info (type=7) */}
+        {isLogin && loginAuditFields.length > 0 && (
+          <DetailSection
+            icon={<LogIn className='size-3.5' aria-hidden='true' />}
+            label={t('Login Info')}
+          >
+            {operationText != null && (
+              <DetailRow label={t('Operation')} value={operationText} />
+            )}
+            {loginAuditFields.map((field, idx) => (
+              <DetailRow
+                key={idx}
+                label={field.label}
+                value={field.value}
+                mono
+              />
+            ))}
+          </DetailSection>
+        )}
+
+        {/* Audio/WebSocket token breakdown */}
+        {hasAudioTokens && other && (
+          <DetailSection
+            icon={<Headphones className='size-3.5' aria-hidden='true' />}
+            label={t('Audio Tokens')}
+          >
+            {other.audio_input != null && other.audio_input > 0 && (
+              <DetailRow
+                label={t('Audio Input')}
+                value={formatTokens(other.audio_input)}
+                mono
+              />
+            )}
+            {other.audio_output != null && other.audio_output > 0 && (
+              <DetailRow
+                label={t('Audio Output')}
+                value={formatTokens(other.audio_output)}
+                mono
+              />
+            )}
+            {other.text_input != null && other.text_input > 0 && (
+              <DetailRow
+                label={t('Text Input')}
+                value={formatTokens(other.text_input)}
+                mono
+              />
+            )}
+            {other.text_output != null && other.text_output > 0 && (
+              <DetailRow
+                label={t('Text Output')}
+                value={formatTokens(other.text_output)}
+                mono
+              />
+            )}
+          </DetailSection>
+        )}
+
+        {/* Reasoning effort */}
+        {other?.reasoning_effort && (
+          <DetailRow
+            label={t('Reasoning Effort')}
+            value={
+              <StatusBadge
+                label={other.reasoning_effort}
+                variant={
+                  other.reasoning_effort === 'high'
+                    ? 'orange'
+                    : other.reasoning_effort === 'medium'
+                      ? 'yellow'
+                      : 'green'
+                }
+                size='sm'
+                copyable={false}
+              />
+            }
+          />
+        )}
+
+        {/* System prompt override */}
+        {other?.is_system_prompt_overwritten && (
+          <DetailRow
+            label={t('System Prompt')}
+            value={
+              <StatusBadge
+                label={t('Overwritten')}
+                variant='orange'
+                size='sm'
+                copyable={false}
+              />
+            }
+          />
+        )}
+
+        {/* Model mapping */}
+        {other?.is_model_mapped && other?.upstream_model_name && (
+          <DetailSection label={t('Model Mapping')}>
+            <DetailRow
+              label={t('Request Model')}
+              value={props.log.model_name}
+              mono
+            />
+            <DetailRow
+              label={t('Actual Model')}
+              value={other.upstream_model_name}
+              mono
+            />
+          </DetailSection>
+        )}
+
+        {/* Token breakdown (for consume/error types with token data) */}
+        {isDisplayableType(props.log.type) && other && (
+          <TokenBreakdown log={props.log} other={other} />
+        )}
+
+        {/* Billing breakdown (consume type) */}
+        {isConsume && other && !isViolation && (
+          <BillingBreakdown
+            log={props.log}
+            other={other}
+            isAdmin={props.isAdmin}
+          />
+        )}
+
+        {/* Tiered pricing breakdown (when billing_mode is tiered_expr) */}
+        {isTieredBilling && other?.expr_b64 && (
+          <DetailSection label={t('Dynamic Pricing')}>
+            <DynamicPricingBreakdown
+              compact
+              billingExpr={decodeBillingExprB64(other.expr_b64)}
+              matchedTierLabel={other.matched_tier}
+              hideCacheColumns={!hasAnyCacheTokens(other)}
+            />
+          </DetailSection>
+        )}
+
+        {/* Admin billing mode indicator for non-consume */}
+        {props.isAdmin &&
+          !isConsume &&
+          props.log.type !== 6 &&
+          other?.admin_info && (
+            <DetailRow
+              label={t('Billing Source')}
+              value={
+                <span className='flex items-center gap-1'>
+                  {other.admin_info.local_count_tokens ? (
+                    <Monitor className='size-3 text-blue-500' />
+                  ) : (
+                    <Cloud className='size-3 text-emerald-500' />
+                  )}
+                  <span className='text-xs'>
+                    {other.admin_info.local_count_tokens
+                      ? t('Local Billing')
+                      : t('Upstream Response')}
+                  </span>
+                </span>
+              }
+            />
+          )}
+
+        {/* Stream status details (admin only) */}
+        {props.isAdmin &&
+          other?.stream_status &&
+          other.stream_status.status !== 'ok' && (
+            <DetailSection label={t('Stream Status')}>
+              <DetailRow
+                label={t('Status')}
+                value={
+                  <StatusBadge
+                    label={other.stream_status.status || t('Error')}
+                    variant='red'
+                    size='sm'
+                    copyable={false}
+                  />
+                }
+              />
+              {other.stream_status.end_reason && (
+                <DetailRow
+                  label={t('End Reason')}
+                  value={other.stream_status.end_reason}
+                />
+              )}
+              {(other.stream_status.error_count ?? 0) > 0 && (
+                <DetailRow
+                  label={t('Soft Errors')}
+                  value={String(other.stream_status.error_count)}
+                />
+              )}
+              {other.stream_status.end_error && (
+                <DetailRow
+                  label={t('End Error')}
+                  value={other.stream_status.end_error}
+                />
+              )}
+              {Array.isArray(other.stream_status.errors) &&
+                other.stream_status.errors.length > 0 && (
+                  <pre className='bg-background/60 mt-1 max-h-32 overflow-y-auto rounded border p-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap'>
+                    {other.stream_status.errors.join('\n')}
+                  </pre>
+                )}
             </DetailSection>
           )}
 

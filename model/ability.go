@@ -104,11 +104,43 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 }
 
 func GetChannel(group string, model string, retry int) (*Channel, error) {
-	candidates, err := getSatisfiedChannelsFromDB(group, model)
-	if err != nil || len(candidates) == 0 {
+	var abilities []Ability
+
+	var err error = nil
+	channelQuery, err := getChannelQuery(group, model, retry)
+	if err != nil {
 		return nil, err
 	}
-	return getRandomChannelFromCandidates(candidates, retry)
+	if common.UsingMainDatabase(common.DatabaseTypeSQLite) || common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
+		err = channelQuery.Order("weight DESC").Find(&abilities).Error
+	} else {
+		err = channelQuery.Order("weight DESC").Find(&abilities).Error
+	}
+	if err != nil {
+		return nil, err
+	}
+	channel := Channel{}
+	if len(abilities) > 0 {
+		// Randomly choose one
+		weightSum := uint(0)
+		for _, ability_ := range abilities {
+			weightSum += ability_.Weight + 10
+		}
+		// Randomly choose one
+		weight := common.GetRandomInt(int(weightSum))
+		for _, ability_ := range abilities {
+			weight -= int(ability_.Weight) + 10
+			//log.Printf("weight: %d, ability weight: %d", weight, *ability_.Weight)
+			if weight <= 0 {
+				channel.Id = ability_.ChannelId
+				break
+			}
+		}
+	} else {
+		return nil, nil
+	}
+	err = DB.First(&channel, "id = ?", channel.Id).Error
+	return &channel, err
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
@@ -260,7 +292,7 @@ func FixAbility() (int, int, error) {
 	defer fixLock.Unlock()
 
 	// truncate abilities table
-	if common.UsingSQLite {
+	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
 		err := DB.Exec("DELETE FROM abilities").Error
 		if err != nil {
 			common.SysLog(fmt.Sprintf("Delete abilities failed: %s", err.Error()))

@@ -18,8 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { type ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
-import { formatQuota, formatTimestampToDate } from '@/lib/format'
-import { cn } from '@/lib/utils'
+
+import { BadgeCell, TruncatedCell } from '@/components/data-table'
+import { GroupBadge } from '@/components/group-badge'
+import { StatusBadge } from '@/components/status-badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
 import {
@@ -27,9 +29,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { DataTableColumnHeader } from '@/components/data-table'
-import { GroupBadge } from '@/components/group-badge'
-import { StatusBadge } from '@/components/status-badge'
+import { getUserGroups } from '@/lib/api'
+import { formatQuota, formatTimestampToDate } from '@/lib/format'
+import { cn } from '@/lib/utils'
+
 import { API_KEY_STATUSES } from '../constants'
 import { type ApiKey, type ApiKeyGroupConfig } from '../types'
 import {
@@ -350,8 +353,7 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
     {
       id: 'actions',
       cell: ({ row }) => <DataTableRowActions row={row} />,
-      meta: { label: t('Actions') },
-      size: 88,
+      meta: { pinned: 'right' as const },
     },
   ]
 }

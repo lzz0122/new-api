@@ -269,7 +269,7 @@ func runChannelHealthProbe(channel *model.Channel, testUserID int, manual bool) 
 	for _, probeModel := range probeModels {
 		endpointType := channelHealthProbeEndpointType(channel, probeModel)
 		isStream := shouldUseStreamForChannelHealthProbe(channel, endpointType)
-		result := testChannel(channel, testUserID, probeModel, endpointType, isStream)
+		result := testChannel(context.Background(), channel, testUserID, probeModel, endpointType, isStream)
 		if result.localErr != nil && result.newAPIError == nil {
 			lastLocalErr = result.localErr
 			continue

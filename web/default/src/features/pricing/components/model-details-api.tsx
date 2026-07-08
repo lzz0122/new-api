@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMemo, useState } from 'react'
 import {
   ChevronRight,
   ExternalLink,
@@ -27,12 +26,10 @@ import {
   Sigma,
   Zap,
 } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { BundledLanguage } from 'shiki/bundle/web'
-import { cn } from '@/lib/utils'
-import { useStatus } from '@/hooks/use-status'
-import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+
 import {
   CodeBlock,
   CodeBlockCopyButton,
@@ -41,6 +38,10 @@ import {
   StaticDataTable,
   staticDataTableClassNames as tableStyles,
 } from '@/components/data-table'
+import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useStatus } from '@/hooks/use-status'
+
 import {
   buildRateLimits,
   buildSupportedParameters,

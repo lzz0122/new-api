@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
   Blend,
@@ -36,10 +35,12 @@ import {
   ZoomIn,
   type LucideIcon,
 } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { formatTimestampToDate } from '@/lib/format'
-import { DataTableColumnHeader } from '@/components/data-table'
+
 import { StatusBadge } from '@/components/status-badge'
+import { formatTimestampToDate } from '@/lib/format'
+
 import { MJ_TASK_TYPES } from '../../constants'
 import {
   mjTaskTypeMapper,
@@ -155,9 +156,10 @@ export function useDrawingLogsColumns(
         <div className='flex max-w-[160px] flex-col gap-0.5'>
           <StatusBadge
             label={mjId}
-            autoColor={mjId}
+            copyText={mjId}
+            variant='neutral'
             size='sm'
-            className='border-border/60 bg-muted/30 max-w-full truncate rounded-md border px-1.5 py-0.5 font-mono'
+            className='border-border/60 bg-muted/30 !text-foreground max-w-full truncate rounded-md border px-1.5 py-0.5 font-mono'
           />
         </div>
       )
