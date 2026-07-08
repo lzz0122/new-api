@@ -35,7 +35,11 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { BadgeListCell } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
 import { ProviderBadge } from '@/components/provider-badge'
-import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
+import {
+  StatusBadge,
+  StatusBadgeList,
+  type StatusBadgeProps,
+} from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
 import { TruncatedText } from '@/components/truncated-text'
 import { Button } from '@/components/ui/button'
@@ -576,6 +580,7 @@ export function useChannelsColumns(
               },
               enableSorting: false,
               enableHiding: false,
+              enableResizing: false,
               size: 40,
             } satisfies ColumnDef<Channel>,
           ]
@@ -640,13 +645,13 @@ export function useChannelsColumns(
           const hasParamOverride = Boolean(channel.param_override?.trim())
 
           return (
-            <div className='flex items-center gap-2'>
-              <div className='flex flex-col gap-1'>
-                <div className='flex items-center gap-1.5'>
+            <div className='flex max-w-full min-w-0 items-center gap-2'>
+              <div className='flex max-w-full min-w-0 flex-col gap-1'>
+                <div className='flex max-w-full min-w-0 items-center gap-1.5'>
                   <TruncatedText
                     text={sensitiveVisible ? name : SENSITIVE_MASK}
                     className='font-medium'
-                    maxWidth='max-w-[180px]'
+                    maxWidth='max-w-full'
                   />
                   {isPassThrough && (
                     <TooltipProvider delay={100}>
@@ -700,6 +705,7 @@ export function useChannelsColumns(
             </div>
           )
         },
+        size: 260,
         minSize: 200,
       },
 
