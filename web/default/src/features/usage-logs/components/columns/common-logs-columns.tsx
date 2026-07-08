@@ -21,6 +21,7 @@ import { CircleAlert, GitBranch, Sparkles, KeyRound } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { DataTableColumnHeader } from '@/components/data-table'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {

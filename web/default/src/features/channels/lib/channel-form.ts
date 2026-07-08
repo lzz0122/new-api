@@ -24,6 +24,7 @@ import {
   MODEL_FETCHABLE_TYPES,
 } from '../constants'
 import type { Channel } from '../types'
+import { CHANNEL_TYPE_ADVANCED_CUSTOM } from './advanced-custom'
 
 // ============================================================================
 // Form Validation Schema
@@ -170,6 +171,10 @@ export const channelFormSchema = z
       .string()
       .optional()
       .refine(isOptionalJsonObject, ERROR_MESSAGES.INVALID_JSON),
+    advanced_custom: z
+      .string()
+      .optional()
+      .refine(isOptionalJsonObject, ERROR_MESSAGES.INVALID_JSON),
     other: z.string().optional(),
     // Multi-key options (not sent to backend directly)
     multi_key_mode: z.enum(['single', 'batch', 'multi_to_single']).optional(),
@@ -290,6 +295,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   param_override: '',
   header_override: '',
   settings: '{}',
+  advanced_custom: '',
   other: '',
   multi_key_mode: 'single',
   multi_key_type: 'random',
@@ -374,6 +380,7 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateCheckEnabled = false
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
+  let advancedCustom = ''
 
   if (channel.settings) {
     try {
@@ -399,6 +406,12 @@ export function transformChannelToFormDefaults(
       )
         ? parsed.upstream_model_update_ignored_models.join(',')
         : ''
+      if (
+        parsed.advanced_custom &&
+        typeof parsed.advanced_custom === 'object'
+      ) {
+        advancedCustom = JSON.stringify(parsed.advanced_custom, null, 2)
+      }
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error('Failed to parse channel settings:', error)
@@ -426,6 +439,7 @@ export function transformChannelToFormDefaults(
     param_override: channel.param_override || '',
     header_override: channel.header_override || '',
     settings: channel.settings || '{}',
+    advanced_custom: advancedCustom,
     other: channel.other || '',
     multi_key_mode: 'single',
     multi_key_type: channel.channel_info.multi_key_mode || 'random',
@@ -509,6 +523,15 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     settingsObj.aws_key_type = formData.aws_key_type || 'ak_sk'
   } else if ('aws_key_type' in settingsObj) {
     delete settingsObj.aws_key_type
+  }
+
+  if (
+    formData.type === CHANNEL_TYPE_ADVANCED_CUSTOM &&
+    formData.advanced_custom?.trim()
+  ) {
+    settingsObj.advanced_custom = JSON.parse(formData.advanced_custom)
+  } else if ('advanced_custom' in settingsObj) {
+    delete settingsObj.advanced_custom
   }
 
   // Field passthrough controls:

@@ -27,6 +27,7 @@ import { CacheStatsDialog } from '@/features/system-settings/general/channel-aff
 import { useSidebarConfig } from '@/hooks/use-sidebar-config'
 
 import { UserInfoDialog } from './components/dialogs/user-info-dialog'
+import { CarpoolStatsPage } from './components/carpool-stats-page'
 import {
   UsageLogsProvider,
   useUsageLogsContext,

@@ -17,13 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import * as z from 'zod'
 
 import { Dialog } from '@/components/dialog'
-import { ReactIconByName } from '@/components/react-icon-by-name'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import {
@@ -55,6 +54,7 @@ export type PaymentMethodData = {
   name: string
   type: string
   color: string
+  icon?: string
   min_topup?: string
 }
 

@@ -18,8 +18,18 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, KeyRound, Settings2, WalletCards } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  KeyRound,
+  Pencil,
+  Plus,
+  Settings2,
+  Trash2,
+  WalletCards,
+} from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm, type SubmitErrorHandler } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'

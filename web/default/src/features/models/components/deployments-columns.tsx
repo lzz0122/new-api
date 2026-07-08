@@ -20,6 +20,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { Eye, Info, Pencil, Settings2, Timer, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { DataTableColumnHeader } from '@/components/data-table'
 import { DataTableRowActionMenu } from '@/components/data-table/core/row-action-menu'
 import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'

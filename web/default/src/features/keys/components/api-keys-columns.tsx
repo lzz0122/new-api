@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { type ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 
-import { BadgeCell, TruncatedCell } from '@/components/data-table'
+import { DataTableColumnHeader } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge } from '@/components/status-badge'
 import { Checkbox } from '@/components/ui/checkbox'

@@ -148,6 +148,7 @@ import {
 import { useChannelMutateForm } from '../../hooks/use-channel-mutate-form'
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
+  CHANNEL_TYPE_ADVANCED_CUSTOM,
   channelFormSchema,
   channelsQueryKeys,
   transformChannelToFormDefaults,
@@ -163,6 +164,7 @@ import {
   findMissingModelsInMapping,
   validateModelMappingJson,
   hasAdvancedSettingsErrors,
+  getAdvancedCustomStats,
 } from '../../lib'
 import {
   collectInvalidStatusCodeEntries,
@@ -170,6 +172,7 @@ import {
 } from '../../lib/status-code-risk-guard'
 import type { Channel } from '../../types'
 import { useChannels } from '../channels-provider'
+import { AdvancedCustomEditorDialog } from '../dialogs/advanced-custom-editor-dialog'
 import { CodexOAuthDialog } from '../dialogs/codex-oauth-dialog'
 import { FetchModelsDialog } from '../dialogs/fetch-models-dialog'
 import {
@@ -717,6 +720,7 @@ export function ChannelMutateDrawer({
   const currentPriority = form.watch('priority')
   const currentWeight = form.watch('weight')
   const currentTestModel = form.watch('test_model')
+  const vertexKeyType = form.watch('vertex_key_type')
   const currentAutoBan = form.watch('auto_ban')
   const currentTag = form.watch('tag')
   const currentRemark = form.watch('remark')

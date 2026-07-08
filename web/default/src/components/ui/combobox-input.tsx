@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Check, ChevronsUpDown } from 'lucide-react'
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 
 import { Input } from '@/components/ui/input'
@@ -59,7 +60,14 @@ export function ComboboxInput({
   const containerRef = React.useRef<HTMLDivElement>(null)
   const inputRef = React.useRef<HTMLInputElement>(null)
   const listRef = React.useRef<HTMLUListElement>(null)
+  const dropdownRef = React.useRef<HTMLDivElement>(null)
   const pointerFocusRef = React.useRef(false)
+  const [dropdownPosition, setDropdownPosition] = React.useState({
+    left: 0,
+    top: 0,
+    width: 0,
+    maxHeight: 200,
+  })
   const selectedOption = React.useMemo(
     () => options.find((option) => option.value === value),
     [options, value]

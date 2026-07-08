@@ -26,7 +26,7 @@ import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import { formatCompactNumber, formatQuota } from '@/lib/format'
 import { getRoleLabel } from '@/lib/roles'
 
-import { getDisplayName } from '../lib'
+import { getDisplayName, getUserInitials } from '../lib'
 import type { UserProfile } from '../types'
 
 // ============================================================================

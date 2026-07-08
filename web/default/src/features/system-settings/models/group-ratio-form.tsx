@@ -51,6 +51,7 @@ import {
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import type { ComboboxInputOption } from '@/components/ui/combobox-input'
 
 import {
   SettingsForm,

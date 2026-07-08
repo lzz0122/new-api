@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { type ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 
+import { DataTableColumnHeader } from '@/components/data-table'
 import { MaskedValueDisplay } from '@/components/masked-value-display'
 import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'

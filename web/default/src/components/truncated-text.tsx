@@ -1,4 +1,9 @@
-import { TruncatedCell } from '@/components/data-table/core/truncated-cell'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 interface TruncatedTextProps {

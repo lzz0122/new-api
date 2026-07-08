@@ -20,7 +20,7 @@ import { type ColumnDef } from '@tanstack/react-table'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { BadgeCell } from '@/components/data-table'
+import { DataTableColumnHeader } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'

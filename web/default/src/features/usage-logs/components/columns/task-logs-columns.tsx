@@ -22,6 +22,7 @@ import { Music } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { DataTableColumnHeader } from '@/components/data-table'
 import { StatusBadge } from '@/components/status-badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'

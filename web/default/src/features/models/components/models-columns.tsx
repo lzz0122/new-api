@@ -19,10 +19,13 @@ For commercial licensing, please contact support@quantumnous.com
 import { type ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 
-import { BadgeCell, BadgeListCell } from '@/components/data-table'
+import {
+  BadgeListCell,
+  DataTableColumnHeader,
+} from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
 import { ProviderBadge } from '@/components/provider-badge'
-import { StatusBadge } from '@/components/status-badge'
+import { StatusBadge, StatusBadgeList } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
 import { Checkbox } from '@/components/ui/checkbox'
 import {

@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
 import { Pencil } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -114,11 +114,9 @@ export function UsersMutateDrawer({
   // Fetch user groups. Pricing/channel groups are intentionally separate.
   const { data: groupsData } = useQuery({
     queryKey: ['user-group-options'],
-    queryFn: getUserGroupOptions,
+    queryFn: getGroups,
     staleTime: 5 * 60 * 1000,
   })
-
-  const groups = groupsData?.data || []
 
   // Permission catalog is owned by the backend; fetched once and reused.
   const { data: permissionCatalog = EMPTY_PERMISSION_CATALOG } = useQuery({

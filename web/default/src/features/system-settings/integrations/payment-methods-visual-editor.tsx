@@ -22,7 +22,6 @@ import { useTranslation } from 'react-i18next'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { StaticRowActions } from '@/components/data-table/static/static-row-actions'
-import { ReactIconByName } from '@/components/react-icon-by-name'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -362,7 +361,7 @@ export function PaymentMethodsVisualEditor({
           {/* Mobile card view */}
           <div className='divide-y md:hidden'>
             {filteredMethods.map((method) => {
-              const iconName = getEffectiveIconName(method)
+              const colorPreview = getColorPreview(method.color)
               const methodKey = [
                 method.type,
                 method.name,

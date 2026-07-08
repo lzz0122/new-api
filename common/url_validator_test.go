@@ -109,9 +109,7 @@ func TestValidateRedirectURL(t *testing.T) {
 					t.Errorf("ValidateRedirectURL(%q) expected error containing %q, got nil", tt.url, tt.errContains)
 					return
 				}
-				if tt.errContains != "" && !contains(err.Error(), tt.errContains) {
-					t.Errorf("ValidateRedirectURL(%q) error = %q, want error containing %q", tt.url, err.Error(), tt.errContains)
-				}
+				assert.Contains(t, err.Error(), tt.errContains)
 			} else {
 				if err != nil {
 					t.Errorf("ValidateRedirectURL(%q) unexpected error: %v", tt.url, err)

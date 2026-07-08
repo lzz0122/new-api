@@ -38,6 +38,7 @@ import {
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { DataTableColumnHeader } from '@/components/data-table'
 import { StatusBadge } from '@/components/status-badge'
 import { formatTimestampToDate } from '@/lib/format'
 

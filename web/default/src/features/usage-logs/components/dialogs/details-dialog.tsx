@@ -29,6 +29,7 @@ import {
   ShieldCheck,
   UserCog,
   Info,
+  LogIn,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -36,6 +37,7 @@ import { Dialog } from '@/components/dialog'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
@@ -470,6 +472,72 @@ export function DetailsDialog(props: DetailsDialogProps) {
     if (hasUsername) return String(username)
     return `ID: ${id}`
   })()
+  const adminInfoRecord = adminInfo as Record<string, unknown> | undefined
+  const operationRaw = adminInfoRecord?.operation ?? adminInfoRecord?.action
+  const operationText =
+    typeof operationRaw === 'string' && operationRaw.trim()
+      ? t(operationRaw)
+      : isManage || props.log.type === 7
+        ? t(typeConfig.label)
+        : null
+  const authMethodLabel = adminInfo?.auth_method
+    ? t(String(adminInfo.auth_method))
+    : ''
+  const changedFieldsRaw = adminInfoRecord?.changed_fields
+  const changedFieldsText = Array.isArray(changedFieldsRaw)
+    ? changedFieldsRaw.map(String).filter(Boolean).join(', ')
+    : typeof changedFieldsRaw === 'string'
+      ? changedFieldsRaw
+      : ''
+  const auditRoute = (() => {
+    if (!adminInfoRecord) return null
+    const method = adminInfoRecord.method ?? adminInfoRecord.request_method
+    const route = adminInfoRecord.route ?? adminInfoRecord.request_route
+    const status = adminInfoRecord.status ?? adminInfoRecord.status_code
+    const success = adminInfoRecord.success
+    return {
+      method: typeof method === 'string' ? method : '',
+      route: typeof route === 'string' ? route : '',
+      status:
+        typeof status === 'number'
+          ? status
+          : typeof status === 'string' && status
+            ? Number(status)
+            : undefined,
+      success: typeof success === 'boolean' ? success : undefined,
+    }
+  })()
+  const showManageAuditSection =
+    isManage &&
+    props.isAdmin &&
+    !!adminInfo &&
+    (operationText != null ||
+      authMethodLabel !== '' ||
+      changedFieldsText !== '' ||
+      Boolean(auditRoute?.method && auditRoute?.route) ||
+      auditRoute?.status != null)
+  const isLogin = props.log.type === 7
+  const loginAuditFields =
+    isLogin && props.isAdmin && adminInfoRecord
+      ? ([
+          adminInfoRecord.caller_ip && {
+            label: t('IP Address'),
+            value: String(adminInfoRecord.caller_ip),
+          },
+          adminInfoRecord.server_ip && {
+            label: t('Server IP'),
+            value: String(adminInfoRecord.server_ip),
+          },
+          adminInfoRecord.node_name && {
+            label: t('Node Name'),
+            value: String(adminInfoRecord.node_name),
+          },
+          adminInfoRecord.version && {
+            label: t('System Version'),
+            value: String(adminInfoRecord.version),
+          },
+        ].filter(Boolean) as Array<{ label: string; value: string }>)
+      : []
 
   const conversionChain =
     other && Array.isArray(other.request_conversion)

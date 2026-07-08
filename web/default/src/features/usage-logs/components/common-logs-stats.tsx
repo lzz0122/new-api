@@ -21,13 +21,37 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import { Flame, History, Play, RefreshCw, Square } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useIsAdmin } from '@/hooks/use-admin'
 import { formatLogQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-import { getLogStats, getUserLogStats } from '../api'
+import {
+  finishCarnival,
+  getCarnivalHistory,
+  getCarnivalStatus,
+  getLogStats,
+  getUpstreamUsage,
+  getUserLogStats,
+  startCarnival,
+} from '../api'
 import { DEFAULT_LOG_STATS } from '../constants'
 import { buildApiParams } from '../lib/utils'
 import type { CarnivalAggregateSummary, CarnivalSessionSummary } from '../types'

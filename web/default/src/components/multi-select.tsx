@@ -122,6 +122,7 @@ export function MultiSelect(props: MultiSelectProps) {
 
   const [inputValue, setInputValue] = React.useState('')
   const [open, setOpen] = React.useState(false)
+  const expanded = false
 
   const selectedSet = React.useMemo(
     () => new Set(props.selected),
