@@ -308,6 +308,26 @@ func RecordCarpoolUsageDailySnapshot(params CarpoolUsageDailySnapshotParams) err
 	return LOG_DB.Clauses(carpoolUsageDailySnapshotOnConflict(params, now)).Create(record).Error
 }
 
+func recordCarpoolUsageDailySnapshotFromLog(group string, userID int, username string, tokenID int, tokenName string, quota int, tokenUsed int, createdAt int64, carnivalSessionID int) {
+	group = strings.TrimSpace(group)
+	if group == "" || userID <= 0 || quota <= 0 || carnivalSessionID > 0 {
+		return
+	}
+	if err := RecordCarpoolUsageDailySnapshot(CarpoolUsageDailySnapshotParams{
+		Group:        group,
+		UserID:       userID,
+		Username:     username,
+		TokenID:      tokenID,
+		TokenName:    tokenName,
+		Quota:        quota,
+		TokenUsed:    tokenUsed,
+		RequestCount: 1,
+		CreatedAt:    createdAt,
+	}); err != nil {
+		common.SysLog("failed to record carpool usage daily snapshot: " + err.Error())
+	}
+}
+
 func EnsureDefaultCarpoolSession() error {
 	if LOG_DB == nil {
 		return nil
@@ -1227,37 +1247,54 @@ func queryCarpoolTokenUsage(group string, startTimestamp int64, endTimestamp int
 
 func queryCarpoolSnapshotUserUsage(group string, start time.Time, end time.Time) ([]carpoolUsageRow, error) {
 	var rows []carpoolUsageRow
-	query := LOG_DB.Model(&CarpoolUsageDailyRecord{}).
-		Where("group_name = ?", group)
-	if startDate, endDate, ok := carpoolDateBounds(start, end); ok {
-		query = query.Where("usage_date >= ? AND usage_date <= ?", startDate, endDate)
-	}
-	if err := query.
-		Select("user_id, MAX(username) AS username, COALESCE(SUM(quota), 0) AS quota, COALESCE(SUM(token_used), 0) AS token_used, COALESCE(SUM(request_count), 0) AS request_count").
-		Group("user_id").
-		Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	fallbackRows, err := queryCarpoolQuotaDataFallbackUserUsage(group, start, end)
+	currentDayRows, err := queryCarpoolCurrentDayUserUsage(group, start, end)
 	if err != nil {
 		return nil, err
 	}
-	return mergeCarpoolUsageRows(rows, fallbackRows), nil
+	snapshotStart, snapshotEnd, querySnapshots := carpoolSnapshotRangeForCurrentDay(start, end, len(currentDayRows) > 0)
+	if querySnapshots {
+		query := LOG_DB.Model(&CarpoolUsageDailyRecord{}).
+			Where("group_name = ?", group)
+		if startDate, endDate, ok := carpoolDateBounds(snapshotStart, snapshotEnd); ok {
+			query = query.Where("usage_date >= ? AND usage_date <= ?", startDate, endDate)
+		}
+		if err := query.
+			Select("user_id, MAX(username) AS username, COALESCE(SUM(quota), 0) AS quota, COALESCE(SUM(token_used), 0) AS token_used, COALESCE(SUM(request_count), 0) AS request_count").
+			Group("user_id").
+			Find(&rows).Error; err != nil {
+			return nil, err
+		}
+		fallbackRows, err := queryCarpoolQuotaDataFallbackUserUsage(group, snapshotStart, snapshotEnd)
+		if err != nil {
+			return nil, err
+		}
+		rows = mergeCarpoolUsageRows(rows, fallbackRows)
+	}
+	return mergeCarpoolUsageRows(rows, currentDayRows), nil
 }
 
 func queryCarpoolSnapshotTokenUsage(group string, start time.Time, end time.Time) ([]carpoolTokenUsageRow, error) {
 	var rows []carpoolTokenUsageRow
-	query := LOG_DB.Model(&CarpoolUsageDailyRecord{}).
-		Where("group_name = ?", group).
-		Where("token_id > 0")
-	if startDate, endDate, ok := carpoolDateBounds(start, end); ok {
-		query = query.Where("usage_date >= ? AND usage_date <= ?", startDate, endDate)
+	currentDayRows, err := queryCarpoolCurrentDayTokenUsage(group, start, end)
+	if err != nil {
+		return nil, err
 	}
-	err := query.
-		Select("token_id, MAX(user_id) AS user_id, MAX(token_name) AS token_name, COALESCE(SUM(quota), 0) AS quota, COALESCE(SUM(token_used), 0) AS token_used, COALESCE(SUM(request_count), 0) AS request_count, MAX(updated_at) AS last_seen").
-		Group("token_id").
-		Find(&rows).Error
-	return rows, err
+	snapshotStart, snapshotEnd, querySnapshots := carpoolSnapshotRangeForCurrentDay(start, end, len(currentDayRows) > 0)
+	if querySnapshots {
+		query := LOG_DB.Model(&CarpoolUsageDailyRecord{}).
+			Where("group_name = ?", group).
+			Where("token_id > 0")
+		if startDate, endDate, ok := carpoolDateBounds(snapshotStart, snapshotEnd); ok {
+			query = query.Where("usage_date >= ? AND usage_date <= ?", startDate, endDate)
+		}
+		if err := query.
+			Select("token_id, MAX(user_id) AS user_id, MAX(token_name) AS token_name, COALESCE(SUM(quota), 0) AS quota, COALESCE(SUM(token_used), 0) AS token_used, COALESCE(SUM(request_count), 0) AS request_count, MAX(updated_at) AS last_seen").
+			Group("token_id").
+			Find(&rows).Error; err != nil {
+			return nil, err
+		}
+	}
+	return mergeCarpoolTokenUsageRows(rows, currentDayRows), nil
 }
 
 func queryCarpoolCarnivalUserUsage(group string, startTimestamp int64, endTimestamp int64, sessionID int) ([]carpoolUsageRow, error) {
@@ -1584,24 +1621,32 @@ func isMissingCarpoolLegacyTableError(err error) bool {
 
 func queryCarpoolDailyUsage(group string, startTimestamp int64, endTimestamp int64) ([]carpoolDailyUsageRow, error) {
 	var rows []carpoolDailyUsageRow
-	query := LOG_DB.Model(&CarpoolUsageDailyRecord{}).
-		Where("group_name = ?", group)
 	start := time.Unix(startTimestamp, 0).In(time.Local)
 	end := time.Unix(endTimestamp, 0).In(time.Local)
-	if startDate, endDate, ok := carpoolDateBounds(start, end); ok {
-		query = query.Where("usage_date >= ? AND usage_date <= ?", startDate, endDate)
-	}
-	if err := query.
-		Select("user_id, usage_date AS date, COALESCE(SUM(quota), 0) AS quota").
-		Group("user_id, usage_date").
-		Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	fallbackRows, err := queryCarpoolQuotaDataFallbackDailyUsage(group, start, end)
+	currentDayRows, err := queryCarpoolCurrentDayDailyUsage(group, start, end)
 	if err != nil {
 		return nil, err
 	}
-	return mergeCarpoolDailyRows(rows, fallbackRows), nil
+	snapshotStart, snapshotEnd, querySnapshots := carpoolSnapshotRangeForCurrentDay(start, end, len(currentDayRows) > 0)
+	if querySnapshots {
+		query := LOG_DB.Model(&CarpoolUsageDailyRecord{}).
+			Where("group_name = ?", group)
+		if startDate, endDate, ok := carpoolDateBounds(snapshotStart, snapshotEnd); ok {
+			query = query.Where("usage_date >= ? AND usage_date <= ?", startDate, endDate)
+		}
+		if err := query.
+			Select("user_id, usage_date AS date, COALESCE(SUM(quota), 0) AS quota").
+			Group("user_id, usage_date").
+			Find(&rows).Error; err != nil {
+			return nil, err
+		}
+		fallbackRows, err := queryCarpoolQuotaDataFallbackDailyUsage(group, snapshotStart, snapshotEnd)
+		if err != nil {
+			return nil, err
+		}
+		rows = mergeCarpoolDailyRows(rows, fallbackRows)
+	}
+	return mergeCarpoolDailyRows(rows, currentDayRows), nil
 }
 
 func applyCarpoolDailyRows(userMap map[int]*CarpoolUsageUserSummary, rows []carpoolDailyUsageRow, start time.Time, end time.Time) {
@@ -1734,6 +1779,102 @@ func getFirstCarpoolSnapshotTimestamp(group string) (int64, error) {
 	return record.CreatedAt, nil
 }
 
+func queryCarpoolCurrentDayUserUsage(group string, start time.Time, end time.Time) ([]carpoolUsageRow, error) {
+	startTs, endTs, ok := carpoolCurrentDayLogBounds(start, end)
+	if !ok {
+		return nil, nil
+	}
+	return queryCarpoolUserUsage(group, startTs, endTs, carpoolUsageFilterNormal, 0)
+}
+
+func queryCarpoolCurrentDayTokenUsage(group string, start time.Time, end time.Time) ([]carpoolTokenUsageRow, error) {
+	startTs, endTs, ok := carpoolCurrentDayLogBounds(start, end)
+	if !ok {
+		return nil, nil
+	}
+	return queryCarpoolTokenUsage(group, startTs, endTs, carpoolUsageFilterNormal, 0)
+}
+
+func queryCarpoolCurrentDayDailyUsage(group string, start time.Time, end time.Time) ([]carpoolDailyUsageRow, error) {
+	startTs, endTs, ok := carpoolCurrentDayLogBounds(start, end)
+	if !ok {
+		return nil, nil
+	}
+	return queryCarpoolLogDailyUsage(group, startTs, endTs)
+}
+
+func queryCarpoolLogDailyUsage(group string, startTimestamp int64, endTimestamp int64) ([]carpoolDailyUsageRow, error) {
+	var logRows []carpoolTailLogRow
+	if err := baseCarpoolLogQuery(group, startTimestamp, endTimestamp, carpoolUsageFilterNormal, 0).
+		Select("created_at, user_id, quota").
+		Find(&logRows).Error; err != nil {
+		return nil, err
+	}
+	merged := map[string]carpoolDailyUsageRow{}
+	for _, row := range logRows {
+		date := time.Unix(row.CreatedAt, 0).In(time.Local).Format("2006-01-02")
+		key := carpoolDailyRowKey(row.UserID, date)
+		daily := merged[key]
+		daily.UserID = row.UserID
+		daily.Date = date
+		daily.Quota += row.Quota
+		merged[key] = daily
+	}
+	rows := make([]carpoolDailyUsageRow, 0, len(merged))
+	for _, row := range merged {
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+func carpoolSnapshotRangeForCurrentDay(start time.Time, end time.Time, excludeCurrentDay bool) (time.Time, time.Time, bool) {
+	if !excludeCurrentDay {
+		return start, end, true
+	}
+	if _, _, ok := carpoolCurrentDayLogBounds(start, end); !ok {
+		return start, end, true
+	}
+	today := carpoolStartOfDay(time.Now().In(time.Local))
+	historicalEnd := today.Add(-time.Nanosecond)
+	if !end.IsZero() && end.Before(historicalEnd) {
+		historicalEnd = end
+	}
+	if !start.IsZero() && start.After(historicalEnd) {
+		return time.Time{}, time.Time{}, false
+	}
+	return start, historicalEnd, true
+}
+
+func carpoolCurrentDayLogBounds(start time.Time, end time.Time) (int64, int64, bool) {
+	now := time.Now().In(time.Local)
+	today := carpoolStartOfDay(now)
+	tomorrow := today.AddDate(0, 0, 1)
+	rangeStart := today
+	rangeEnd := now
+	if !start.IsZero() {
+		start = start.In(time.Local)
+		if !start.Before(tomorrow) {
+			return 0, 0, false
+		}
+		if start.After(rangeStart) {
+			rangeStart = start
+		}
+	}
+	if !end.IsZero() {
+		end = end.In(time.Local)
+		if end.Before(today) {
+			return 0, 0, false
+		}
+		if end.Before(rangeEnd) {
+			rangeEnd = end
+		}
+	}
+	if rangeEnd.Before(rangeStart) {
+		return 0, 0, false
+	}
+	return rangeStart.Unix(), rangeEnd.Unix(), true
+}
+
 func carpoolDateBounds(start time.Time, end time.Time) (string, string, bool) {
 	if start.IsZero() && end.IsZero() {
 		return "", "", false
@@ -1769,6 +1910,43 @@ func mergeCarpoolUsageRows(primary []carpoolUsageRow, fallback []carpoolUsageRow
 		merged[row.UserID] = existing
 	}
 	rows := make([]carpoolUsageRow, 0, len(merged))
+	for _, row := range merged {
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+func mergeCarpoolTokenUsageRows(primary []carpoolTokenUsageRow, fallback []carpoolTokenUsageRow) []carpoolTokenUsageRow {
+	if len(fallback) == 0 {
+		return primary
+	}
+	merged := make(map[int]carpoolTokenUsageRow, len(primary)+len(fallback))
+	for _, row := range primary {
+		if row.TokenID > 0 {
+			merged[row.TokenID] = row
+		}
+	}
+	for _, row := range fallback {
+		if row.TokenID <= 0 {
+			continue
+		}
+		existing := merged[row.TokenID]
+		existing.TokenID = row.TokenID
+		if existing.UserID == 0 {
+			existing.UserID = row.UserID
+		}
+		if existing.TokenName == "" {
+			existing.TokenName = row.TokenName
+		}
+		existing.Quota += row.Quota
+		existing.TokenUsed += row.TokenUsed
+		existing.RequestCount += row.RequestCount
+		if row.LastSeen > existing.LastSeen {
+			existing.LastSeen = row.LastSeen
+		}
+		merged[row.TokenID] = existing
+	}
+	rows := make([]carpoolTokenUsageRow, 0, len(merged))
 	for _, row := range merged {
 		rows = append(rows, row)
 	}

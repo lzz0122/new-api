@@ -402,6 +402,8 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	err := createLog(log)
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
+	} else {
+		recordCarpoolUsageDailySnapshotFromLog(params.Group, userId, username, params.TokenId, params.TokenName, params.Quota, params.PromptTokens+params.CompletionTokens, createdAt, carnivalSessionID)
 	}
 	if common.DataExportEnabled {
 		LogQuotaData(QuotaDataLogParams{
@@ -476,6 +478,8 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	err := createLog(log)
 	if err != nil {
 		common.SysLog("failed to record task billing log: " + err.Error())
+	} else if params.LogType == LogTypeConsume {
+		recordCarpoolUsageDailySnapshotFromLog(params.Group, params.UserId, username, params.TokenId, tokenName, params.Quota, 0, createdAt, carnivalSessionID)
 	}
 	if params.LogType == LogTypeConsume && common.DataExportEnabled {
 		nodeName := params.NodeName
