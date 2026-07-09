@@ -219,6 +219,61 @@ func TestCarpoolSnapshotUsageFallsBackUntilFirstSnapshotTimestamp(t *testing.T) 
 	require.EqualValues(t, 3, rows[0].RequestCount)
 }
 
+func TestCarpoolDayPeriodUsesRealtimeLogsForCurrentDay(t *testing.T) {
+	truncateTables(t)
+
+	now := time.Now().In(time.Local)
+	today := carpoolStartOfDay(now)
+	require.NoError(t, DB.Create(&User{Id: 5, Username: "eve", DisplayName: "Eve"}).Error)
+	require.NoError(t, DB.Create(&Token{
+		Id:     55,
+		UserId: 5,
+		Name:   "eve-key",
+		Status: common.TokenStatusEnabled,
+		Group:  DefaultCarnivalGroup,
+	}).Error)
+	require.NoError(t, LOG_DB.Create(&CarpoolUsageDailyRecord{
+		GroupName:    DefaultCarnivalGroup,
+		UsageDate:    today.Format("2006-01-02"),
+		UserID:       5,
+		Username:     "eve",
+		TokenID:      55,
+		TokenName:    "eve-key",
+		Quota:        100,
+		TokenUsed:    10,
+		RequestCount: 1,
+		CreatedAt:    now.Unix(),
+		UpdatedAt:    now.Unix(),
+	}).Error)
+	require.NoError(t, LOG_DB.Create(&Log{
+		UserId:           5,
+		Username:         "eve",
+		CreatedAt:        now.Unix(),
+		Type:             LogTypeConsume,
+		TokenId:          55,
+		TokenName:        "eve-key",
+		Group:            DefaultCarnivalGroup,
+		Quota:            700,
+		PromptTokens:     70,
+		CompletionTokens: 7,
+	}).Error)
+
+	summary, err := buildCarpoolUsageSummary(DefaultCarnivalGroup, "day", today, now, false, nil)
+	require.NoError(t, err)
+	require.EqualValues(t, 700, summary.Totals.PeriodQuota)
+	require.EqualValues(t, 700, summary.Totals.CumulativeQuota)
+	require.EqualValues(t, 77, summary.Totals.PeriodTokenUsed)
+	require.EqualValues(t, 1, summary.Totals.PeriodRequestCount)
+	require.Len(t, summary.Users, 1)
+	require.EqualValues(t, 700, summary.Users[0].PeriodQuota)
+	require.EqualValues(t, 700, summary.Users[0].CumulativeQuota)
+	require.Len(t, summary.Users[0].Daily, 1)
+	require.EqualValues(t, 700, summary.Users[0].Daily[0].Quota)
+	require.Len(t, summary.Users[0].Tokens, 1)
+	require.EqualValues(t, 700, summary.Users[0].Tokens[0].PeriodQuota)
+	require.EqualValues(t, 700, summary.Users[0].Tokens[0].CumulativeQuota)
+}
+
 func TestCarpoolDayPeriodKeepsLegacyCumulativeUsage(t *testing.T) {
 	truncateTables(t)
 
